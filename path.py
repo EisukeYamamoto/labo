@@ -49,52 +49,58 @@ pathを格納
 
 
 """csvファイルの場所"""
-csv = '/Volumes/I-O DATA HDD/PycharmProjects/labo/data'
-mix_csv = '/Volumes/I-O DATA HDD/PycharmProjects/labo/mix_data'
+csv = '/Volumes/My_SSD/PycharmProjects/labo/data'
+mix_csv = '/Volumes/My_SSD/PycharmProjects/labo/mix_data'
+mix_csv_new = '/Volumes/My_SSD/PycharmProjects/labo/newdata'
 
 """線形補間後のファイルの場所"""
-inte = '/Volumes/I-O DATA HDD/PycharmProjects/labo/inte'
+inte = '/Volumes/My_SSD/PycharmProjects/labo/inte'
 
 """データの切り出し"""
-cut = '/Volumes/I-O DATA HDD/PycharmProjects/labo/cut'
-cut8 = '/UVolumes/I-O DATA HDD/PycharmProjects/labo/cut8'
-cut8_mix = '/Volumes/I-O DATA HDD/PycharmProjects/labo/cut8_mix'
-cut4 = '/Volumes/I-O DATA HDD/PycharmProjects/labo/cut4'
-cut_mix = '/Volumes/I-O DATA HDD/PycharmProjects/labo/cut_mix'
-cut_plusmix = '/Volumes/I-O DATA HDD/PycharmProjects/labo/cut_plusmix'
-cut_plusmix_long = '/Volumes/I-O DATA HDD/PycharmProjects/labo/cut_plusmix_long'
+cut = '/Volumes/My_SSD/PycharmProjects/labo/cut'
+cut8 = '/UVolumes/My_SSD/PycharmProjects/labo/cut8'
+cut8_mix = '/Volumes/My_SSD/PycharmProjects/labo/cut8_mix'
+cut4 = '/Volumes/My_SSD/PycharmProjects/labo/cut4'
+cut_mix = '/Volumes/My_SSD/PycharmProjects/labo/cut_mix'
+cut_mix_new = '/Volumes/My_SSD/PycharmProjects/labo/cut_mix_new'
+cut_plusmix = '/Volumes/My_SSD/PycharmProjects/labo/cut_plusmix'
+cut_plusmix_new = '/Volumes/My_SSD/PycharmProjects/labo/cut_plusmix_new'
+cut_plusmix_long = '/Volumes/My_SSD/PycharmProjects/labo/cut_plusmix_long'
 
 """主成分分析ようデータ"""
-pca = '/Volumes/I-O DATA HDD/PycharmProjects/labo/pca'
+pca = '/Volumes/My_SSD/PycharmProjects/labo/pca'
 
 """png出力"""
-png = '/Volumes/I-O DATA HDD/PycharmProjects/labo/png'
-png_mix = '/Volumes/I-O DATA HDD/PycharmProjects/labo/png_mix'
-png_cnn_char = '/Volumes/I-O DATA HDD/PycharmProjects/cnn_keras/char'
-png_cnn_sub = '/Volumes/I-O DATA HDD/PycharmProjects/cnn_keras/sub'
-png_ica = '/Volumes/I-O DATA HDD/PycharmProjects/labo/png_ica'
+png = '/Volumes/My_SSD/PycharmProjects/labo/png'
+png_mix = '/Volumes/My_SSD/PycharmProjects/labo/png_mix'
+png_cnn_char = '/Volumes/My_SSD/PycharmProjects/cnn_keras/char'
+png_cnn_sub = '/Volumes/My_SSD/PycharmProjects/cnn_keras/sub'
+png_ica = '/Volumes/My_SSD/PycharmProjects/labo/png_ica'
+png_ica_new = '/Volumes/My_SSD/PycharmProjects/labo/png_ica_new'
 
 """FFT出力"""
-fft = '/Volumes/I-O DATA HDD/PycharmProjects/labo/fft'
-fft_8 = '/Volumes/I-O DATA HDD/PycharmProjects/labo/fft_8'
-fft_4 = '/Volumes/I-O DATA HDD/PycharmProjects/labo/fft_4'
-fft_mix = '/Volumes/I-O DATA HDD/PycharmProjects/labo/fft_mix'
-fft_mix_15 = '/Volumes/I-O DATA HDD/PycharmProjects/labo/fft_mix_15'
-fft_mix_7 = '/Volumes/I-O DATA HDD/PycharmProjects/labo/fft_mix_7'
-ifft = '/Volumes/I-O DATA HDD/PycharmProjects/labo/ifft'
-ifft_8 = '/Volumes/I-O DATA HDD/PycharmProjects/labo/ifft_8'
-ifft_4 = '/Volumes/I-O DATA HDD/PycharmProjects/labo/ifft_4'
-ifft_mix = '/Volumes/I-O DATA HDD/PycharmProjects/labo/ifft_mix'
-ifft_mix_8 = '/Volumes/I-O DATA HDD/PycharmProjects/labo/ifft_mix_8'
-ifft_mix_15 = '/Volumes/I-O DATA HDD/PycharmProjects/labo/ifft_mix_15'
+fft = '/Volumes/My_SSD/PycharmProjects/labo/fft'
+fft_8 = '/Volumes/My_SSD/PycharmProjects/labo/fft_8'
+fft_4 = '/Volumes/My_SSD/PycharmProjects/labo/fft_4'
+fft_mix = '/Volumes/My_SSD/PycharmProjects/labo/fft_mix'
+fft_mix_15 = '/Volumes/My_SSD/PycharmProjects/labo/fft_mix_15'
+fft_mix_15_new = '/Volumes/My_SSD/PycharmProjects/labo/fft_mix_15_new'
+fft_mix_7 = '/Volumes/My_SSD/PycharmProjects/labo/fft_mix_7'
+ifft = '/Volumes/My_SSD/PycharmProjects/labo/ifft'
+ifft_8 = '/Volumes/My_SSD/PycharmProjects/labo/ifft_8'
+ifft_4 = '/Volumes/My_SSD/PycharmProjects/labo/ifft_4'
+ifft_mix = '/Volumes/My_SSD/PycharmProjects/labo/ifft_mix'
+ifft_mix_8 = '/Volumes/My_SSD/PycharmProjects/labo/ifft_mix_8'
+ifft_mix_15 = '/Volumes/My_SSD/PycharmProjects/labo/ifft_mix_15'
 
 
-after_ica = '/Volumes/I-O DATA HDD/PycharmProjects/labo/after_ica'
+after_ica = '/Volumes/My_SSD/PycharmProjects/labo/after_ica'
 
-plus_avarage = '/Volumes/I-O DATA HDD/PycharmProjects/labo/plus_avarage'
-plus_avarage_fft = '/Volumes/I-O DATA HDD/PycharmProjects/labo/plus_avarage_fft'
-plus_avarage_ifft = '/Volumes/I-O DATA HDD/PycharmProjects/labo/plus_avarage_ifft'
-plus_avarage_fft_long = '/Volumes/I-O DATA HDD/PycharmProjects/labo/plus_avarage_fft_long'
+plus_avarage = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage'
+plus_avarage_fft = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_fft'
+plus_avarage_ifft = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_ifft'
+plus_avarage_fft_long = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_fft_long'
+plus_avarage_fft_new = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_fft_new'
 
 """学習用パス"""
 # 日付
@@ -102,10 +108,14 @@ day = ['1day', '2day', '3day']
 train_day = ['1day', '2day']
 test_day = ['3day']
 mix_day = ['data1-2']
+new_day = ['Day1', 'Day2', 'Day3']
 # 被験者
 subject = ['sub_A', 'sub_B', 'sub_C']
 test_subject = ['sub_C']
 mix_subject = ['sub_A']
+new_subject = ['E', 'W', 'Y']
+#データセット
+sets = ['data1', 'data2', 'data3', 'data4']
 # 文字列
 char = ['指', '手首']
 mix_char = ['手首', '複合', '指']

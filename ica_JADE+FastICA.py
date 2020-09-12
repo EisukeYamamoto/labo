@@ -29,7 +29,7 @@ sscaler = preprocessing.StandardScaler()
 
 debug = 3  # 0:プロット無し, 1:各チャンネルごとの分離比較, 2:チャンネルを一式表示, 3:一式表示
 plot_flg = 1  # 0:保存しない, 1:保存する
-fft_flg = 1  # 0:時系列データ, 1:パワースペクトル
+fft_flg = 1 # 0:時系列データ, 1:パワースペクトル
 clf_flg = 1  # 重回帰分析の目的関数  1:手首 2:複合動作 3:指
 x_flg = 1  # 1:複合と複合2　2:複合と手首　3:複合と指
 
@@ -75,17 +75,23 @@ def ica(X, iterations, tolerance=1e-5):
     X = center(X)
     X = whitening(X)
     components_nr = X.shape[0]
-    W = np.zeros((components_nr, components_nr), dtype=X.dtype)
+    # W = np.zeros((components_nr, components_nr), dtype=X.dtype)
+    W = np.array(jadeR(X))
+    print(W.shape)
     loop = [0]
     print("components_nr")
     print(components_nr)
 
     for i in range(components_nr):
-        w = np.random.rand(components_nr)
+        # w = np.random.rand(components_nr)
+        w = W[i]
+        print(w)
+        # w = W[i]
         # print(w)
         # print("///////////////////////////////")
         for j in range(iterations):
             w_new = calculate_new_w(w, X)
+            # w_new = W[i]
             if i >= 1:
                 w_new -= np.dot(np.dot(w_new, W[:i].T), W[:i])
 
@@ -167,7 +173,7 @@ def jadeR(X):
 
     m = n
 
-    X -= X.mean(1)
+    # X -= X.mean(1)
 
     # 白色化と信号部分空間への投影
     # -------------------------------------------
@@ -331,7 +337,7 @@ def jadeR(X):
     signs = array(sign(sign(b) + 0.1).T)[ 0 ]  # [1. -1. 1.]
     B = diag(signs) * B  # [[ 0.17242566  0.10485568 -0.7373937 ] [ 0.41923305  0.84589716 -1.41050008] [ 1.12505903 -2.42824508  0.92226197]]
     S = np.dot(B, X_copy)
-    return S
+    return B
 
 
 def plot_mixture_sources_predictions(X, original_sources, S, ch):
@@ -361,14 +367,14 @@ def plot_mixture_sources_predictions(X, original_sources, S, ch):
     if plot_flg == 1:
         if x_flg == 1:
             # plotpath1 = path.png_ica + "/" + d + "/" + i + "/複合+複合2/各チャンネルの比較/" + str(ch) + "ch" #
-            plotpath1 = path.png_ica_new + "/" + i + "/" + d + "/" + s + "/" + "Jade" + "/各チャンネルの比較/" + str(
+            plotpath1 = path.png_ica_new + "/" + i + "/" + d + "/" + s + "/" + "JADE+fastICA" + "/各チャンネルの比較/" + str(
                 ch) + "ch"
         elif x_flg == 2:
             plotpath1 = path.png_ica + "/" + d + "/" + i + "/複合+手首/各チャンネルの比較/" + str(ch) + "ch"
         else:
             plotpath1 = path.png_ica + "/" + d + "/" + i + "/複合+指/各チャンネルの比較/" + str(ch) + "ch"
         plt.savefig(plotpath1)
-        plt.show()
+        # plt.show()
     else:
         plt.show()
 
@@ -407,7 +413,6 @@ def min_max2(l, r, min_):
 def mapping(ch_list):
     len_num = len(ch_list[ 0 ])
     x = np.linspace(0, len_num, len_num)
-
     y0 = ch_list[ 0 ]
     y1 = ch_list[ 1 ]
     y2 = ch_list[ 2 ]
@@ -787,13 +792,13 @@ def write_plot(ch_list, name):
     if plot_flg == 1:
         if x_flg == 1:
             # plotpath2 = path.png_ica + "/" + d + "/" + i + "/複合+複合2/" + name
-            plotpath2 = path.png_ica_new + "/" + i + "/" + d + "/" + s + "/" + "Jade" + "/" + name
+            plotpath2 = path.png_ica_new + "/" + i + "/" + d + "/" + s + "/" + "JADE+fastICA" + "/" + name
         elif x_flg == 2:
             plotpath2 = path.png_ica + "/" + d + "/" + i + "/複合+手首/" + name
         else:
             plotpath2 = path.png_ica + "/" + d + "/" + i + "/複合+指/" + name
         plt.savefig(plotpath2)
-        plt.show()
+        # plt.show()
     else:
         plt.show()
     plt.close('all')
@@ -802,7 +807,7 @@ def write_plot(ch_list, name):
 
 
 
-nf_all = open(path.png_ica_new + "/" + "結果まとめ_JADE.CSV", 'w', encoding="utf_8_sig")
+nf_all = open(path.png_ica_new + "/" + "結果まとめ_JADE+fastICA.CSV", 'w', encoding="utf_8_sig")
 dataWriter_all = csv.writer(nf_all)
 all_average = 0
 for i in path.new_subject:
@@ -941,23 +946,19 @@ for i in path.new_subject:
             # X5 = mix_sources([tekubi_ch5, yubi_ch5])
             # X6 = mix_sources([tekubi_ch6, yubi_ch6])
 
-            # S0 = ica(X0, iterations=1000)
-            # S1 = ica(X1, iterations=1000)
-            # S2 = ica(X2, iterations=1000)
-            # S3 = ica(X3, iterations=1000)
-            # S4 = ica(X4, iterations=1000)
-            # S5 = ica(X5, iterations=1000)
-            # S6 = ica(X6, iterations=1000)
-            # S7 = ica(X7, iterations=1000)
+            S0 = ica(X0, iterations=1000)
+            S1 = ica(X1, iterations=1000)
+            S2 = ica(X2, iterations=1000)
+            S3 = ica(X3, iterations=1000)
+            S4 = ica(X4, iterations=1000)
+            S5 = ica(X5, iterations=1000)
+            S6 = ica(X6, iterations=1000)
+            S7 = ica(X7, iterations=1000)
 
-            S0 = np.array(jadeR(X0))
-            S1 = np.array(jadeR(X1))
-            S2 = np.array(jadeR(X2))
-            S3 = np.array(jadeR(X3))
-            S4 = np.array(jadeR(X4))
-            S5 = np.array(jadeR(X5))
-            S6 = np.array(jadeR(X6))
-            S7 = np.array(jadeR(X7))
+            # S0 = np.array(jadeR(X0))
+            # S1 = np.array(jadeR(X1))
+            # S2 = np.array(jadeR(X2))
+            # S3 = np.array(jadeR(X3))
 
             # print("S")
             # print(S0.ndim)

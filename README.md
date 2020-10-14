@@ -1,5 +1,5 @@
 # Separation of Compound Actions with Wrist and Finger Based on EMG
-This repository is a backup of the source code used in my research. My research is in the development stage and I will keep updating it.\\
+This repository is a backup of the source code used in my research. My research is in the development stage and I will keep updating it.
 ※Please note that we cannot release the experimental data used in this study due to portrait rights.
 
 ## Abstract

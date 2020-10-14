@@ -78,6 +78,7 @@ png_cnn_char = '/Volumes/My_SSD/PycharmProjects/cnn_keras/char'
 png_cnn_sub = '/Volumes/My_SSD/PycharmProjects/cnn_keras/sub'
 png_ica = '/Volumes/My_SSD/PycharmProjects/labo/png_ica'
 png_ica_new = '/Volumes/My_SSD/PycharmProjects/labo/png_ica_new'
+png_ica_abs = '/Volumes/My_SSD/PycharmProjects/labo/png_ica_abs'
 
 """FFT出力"""
 fft = '/Volumes/My_SSD/PycharmProjects/labo/fft'
@@ -103,6 +104,8 @@ plus_avarage_fft = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_fft'
 plus_avarage_ifft = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_ifft'
 plus_avarage_fft_long = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_fft_long'
 plus_avarage_fft_new = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_fft_new'
+
+preprocessing_abs = '/Volumes/My_SSD/PycharmProjects/labo/preprocessing_abs'
 
 """学習用パス"""
 # 日付

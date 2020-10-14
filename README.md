@@ -7,3 +7,4 @@ In this research, we propose to measure the EMGs of the wrist and fingers using 
 
 ## What is EMG?
 EMG(ElectroMyoGraphy) is a biological signal and refers to an electrical signal that flows from the brain to the muscle fibers(Strictly speaking, it is a time-series signal of the potential change caused by membrane currents flowing through the volume conductors around the muscle fibers.).
+

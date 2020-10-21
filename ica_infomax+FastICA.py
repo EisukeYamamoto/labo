@@ -700,29 +700,41 @@ def outlier_iqr(d):
     return d
 
 def sim_pearson(d1, d2):
-    n = len(d1)
+    # n = len(d1)
+    #
+    # mean1 = sum(d1) / n
+    # mean2 = sum(d2) / n
+    #
+    # variance1 = 0
+    # variance2 = 0
+    # covariance = 0
+    # for k in range(n):
+    #     a1 = (d1[k] - mean1)
+    #     variance1 += a1 ** 2
+    #
+    #     a2 = (d2[k] - mean2)
+    #     variance2 += a2 ** 2
+    #
+    #     covariance += a1 * a2
+    #
+    # variance1 = math.sqrt(variance1)
+    # variance2 = math.sqrt(variance2)
+    #
+    # if variance1 * variance2 == 0 : return 0
+    #
+    # return covariance / (variance1 * variance2)
 
-    mean1 = sum(d1) / n
-    mean2 = sum(d2) / n
+    n = len(d2)
 
-    variance1 = 0
-    variance2 = 0
-    covariance = 0
+    mean = (sum(d2)) / n
+
+    mother = 0
+    child = 0
     for k in range(n):
-        a1 = (d1[k] - mean1)
-        variance1 += a1 ** 2
+        mother += abs(d2[ k ] - mean) ** 2
+        child += abs(d2[ k ] - d1[ k ]) ** 2
 
-        a2 = (d2[k] - mean2)
-        variance2 += a2 ** 2
-
-        covariance += a1 * a2
-
-    variance1 = math.sqrt(variance1)
-    variance2 = math.sqrt(variance2)
-
-    if variance1 * variance2 == 0 : return 0
-
-    return covariance / (variance1 * variance2)
+    return (1 - (math.sqrt(child) / math.sqrt(mother)))
 
 
 
@@ -1875,7 +1887,7 @@ for i in path.new_subject:
             print()
             print("////////////////////////////////////////////////////////")
             print()
-            nf = open(path.png_ica_new + "/" + i + "/" + d + "/" + s + "/" + "fastICA" + "/" + "結果_fastICA.CSV", 'w',
+            nf = open(path.png_ica_new + "/" + i + "/" + d + "/" + s + "/" + "infomax+fastICA" + "/" + "結果_infomax+fastICA.CSV", 'w',
                       encoding="utf_8_sig")
             dataWriter = csv.writer(nf)
             dataWriter.writerow([ "ch1" ])

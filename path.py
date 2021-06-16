@@ -52,6 +52,7 @@ pathを格納
 csv = '/Volumes/My_SSD/PycharmProjects/labo/data'
 mix_csv = '/Volumes/My_SSD/PycharmProjects/labo/mix_data'
 mix_csv_new = '/Volumes/My_SSD/PycharmProjects/labo/newdata'
+twoPoleCsv = '/Volumes/My_SSD/PycharmProjects/labo/2poleSensorData'
 
 """線形補間後のファイルの場所"""
 inte = '/Volumes/My_SSD/PycharmProjects/labo/inte'
@@ -64,9 +65,11 @@ cut4 = '/Volumes/My_SSD/PycharmProjects/labo/cut4'
 cut_8_new = '/Volumes/My_SSD/PycharmProjects/labo/cut_8_new'
 cut_mix = '/Volumes/My_SSD/PycharmProjects/labo/cut_mix'
 cut_mix_new = '/Volumes/My_SSD/PycharmProjects/labo/cut_mix_new'
+cut_mix_twoPole = '/Volumes/My_SSD/PycharmProjects/labo/cut_mix_twoPole'
 cut_plusmix = '/Volumes/My_SSD/PycharmProjects/labo/cut_plusmix'
 cut_plusmix_new = '/Volumes/My_SSD/PycharmProjects/labo/cut_plusmix_new'
 cut_plusmix_long = '/Volumes/My_SSD/PycharmProjects/labo/cut_plusmix_long'
+cut_plusmix_twoPole = '/Volumes/My_SSD/PycharmProjects/labo/cut_plusmix_twoPole'
 
 """主成分分析ようデータ"""
 pca = '/Volumes/My_SSD/PycharmProjects/labo/pca'
@@ -79,6 +82,7 @@ png_cnn_sub = '/Volumes/My_SSD/PycharmProjects/cnn_keras/sub'
 png_ica = '/Volumes/My_SSD/PycharmProjects/labo/png_ica'
 png_ica_new = '/Volumes/My_SSD/PycharmProjects/labo/png_ica_new'
 png_ica_abs = '/Volumes/My_SSD/PycharmProjects/labo/png_ica_abs'
+png_ica_twoPole = '/Volumes/My_SSD/PycharmProjects/labo/png_ica_twoPole'
 
 """FFT出力"""
 fft = '/Volumes/My_SSD/PycharmProjects/labo/fft'
@@ -87,6 +91,7 @@ fft_4 = '/Volumes/My_SSD/PycharmProjects/labo/fft_4'
 fft_mix = '/Volumes/My_SSD/PycharmProjects/labo/fft_mix'
 fft_mix_15 = '/Volumes/My_SSD/PycharmProjects/labo/fft_mix_15'
 fft_mix_15_new = '/Volumes/My_SSD/PycharmProjects/labo/fft_mix_15_new'
+fft_mix_15_twoPole = '/Volumes/My_SSD/PycharmProjects/labo/fft_mix_15_twoPole'
 fft_mix_7 = '/Volumes/My_SSD/PycharmProjects/labo/fft_mix_7'
 ifft = '/Volumes/My_SSD/PycharmProjects/labo/ifft'
 ifft_8 = '/Volumes/My_SSD/PycharmProjects/labo/ifft_8'
@@ -104,6 +109,7 @@ plus_avarage_fft = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_fft'
 plus_avarage_ifft = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_ifft'
 plus_avarage_fft_long = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_fft_long'
 plus_avarage_fft_new = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_fft_new'
+plus_avarage_fft_twoPole = '/Volumes/My_SSD/PycharmProjects/labo/plus_avarage_fft_twoPole'
 
 preprocessing_abs = '/Volumes/My_SSD/PycharmProjects/labo/preprocessing_abs'
 
@@ -114,13 +120,16 @@ train_day = ['1day', '2day']
 test_day = ['3day']
 mix_day = ['data1-2']
 new_day = ['Day1', 'Day2', 'Day3']
+new_day_test = ['Day1']
 # 被験者
 subject = ['sub_A', 'sub_B', 'sub_C']
 test_subject = ['sub_C']
 mix_subject = ['sub_A']
 new_subject = ['E', 'W', 'Y']
+new_subject_test = ['E']
 #データセット
 sets = ['data1', 'data2', 'data3', 'data4']
+sets_test = ['data1']
 # 文字列
 char = ['指', '手首']
 mix_char = ['手首', '複合', '指']

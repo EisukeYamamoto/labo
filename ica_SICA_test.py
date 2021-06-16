@@ -1,16 +1,5 @@
-'''
-Independent Component Analysis (ICA):
-This script computes ICA using the INFOMAX criteria.
-The preprocessing steps include demeaning and whitening.
-'''
-import numpy as np
-from numpy.linalg import matrix_rank, inv
-from numpy.random import permutation
-from scipy.linalg import eigh
-from scipy.linalg import norm as mnorm
-
 import matplotlib.pyplot as plt
-from app import ica
+# from app import ica
 import pandas as pd
 import numpy as np
 import math
@@ -20,6 +9,7 @@ from sklearn.decomposition import FastICA
 from app import path
 from sklearn import linear_model
 from sklearn import preprocessing
+import ica_SICA
 
 import csv
 
@@ -31,266 +21,16 @@ clf4 = linear_model.LinearRegression()
 clf5 = linear_model.LinearRegression()
 clf6 = linear_model.LinearRegression()
 clf7 = linear_model.LinearRegression()
-
 sscaler = preprocessing.StandardScaler()
+SICA = ica_SICA.SICA()
 # mm = preprocessing.minmax_scale()
 
 debug = 3  # 0:プロット無し, 1:各チャンネルごとの分離比較, 2:チャンネルを一式表示, 3:一式表示
-plot_flg = 1  # 0:保存しない, 1:保存する
+plot_flg = 0  # 0:保存しない, 1:保存する
 fft_flg = 1  # 0:時系列データ, 1:パワースペクトル　2:長さ二倍
 clf_flg = 1  # 重回帰分析の目的関数  1:手首 2:複合動作 3:指
 x_flg = 1  # 1:複合と複合2　2:複合と手首　3:複合と指
 
-# Global constants
-EPS = 1e-16
-MAX_W = 1e8
-ANNEAL = 0.9
-MAX_STEP = 500
-MIN_LRATE = 1e-6
-W_STOP = 1e-6
-
-
-def norm(x):
-    """Computes the norm of a vector or the Frobenius norm of a
-    matrix_rank
-    """
-    return mnorm(x.ravel())
-
-def diagsqrts(w):
-    """
-    Returns direct and inverse square root normalization matrices
-    """
-    Di = np.diag(1. / (np.sqrt(w) + np.finfo(float).eps))
-    D = np.diag(np.sqrt(w))
-    return D, Di
-
-
-def pca_whiten(x2d, n_comp, verbose=True):
-    """ data Whitening
-    *Input
-    x2d : 2d data matrix of observations by variables
-    n_comp: Number of components to retain
-    *Output
-    Xwhite : Whitened X
-    white : whitening matrix (Xwhite = np.dot(white,X))
-    dewhite : dewhitening matrix (X = np.dot(dewhite,Xwhite))
-    """
-    x2d_demean = x2d - x2d.mean(axis=1).reshape((-1, 1))
-    NSUB, NVOX = x2d_demean.shape
-    print(NSUB)
-    if NSUB > NVOX:
-        cov = np.dot(x2d_demean.T, x2d_demean) / (NSUB - 1)
-        w, v = eigh(cov, eigvals=(NVOX - n_comp, NVOX - 1))
-        D, Di = diagsqrts(w)
-        u = np.dot(np.dot(x2d_demean, v), Di)
-        x_white = v.T
-        white = np.dot(Di, u.T)
-        dewhite = np.dot(u, D)
-    else:
-        cov = np.dot(x2d_demean, x2d_demean.T) / (NVOX - 1)
-        w, u = eigh(cov, eigvals=(NSUB - n_comp, NSUB - 1))
-        D, Di = diagsqrts(w)
-        white = np.dot(Di, u.T)
-        x_white = np.dot(white, x2d_demean)
-        dewhite = np.dot(u, D)
-    return (x_white, white, dewhite)
-
-
-def w_update(weights, x_white, bias1, lrate1):
-    """ Update rule for infomax
-    This function recieves parameters to update W1
-    * Input
-    W1: unmixing matrix (must be a square matrix)
-    Xwhite1: whitened data
-    bias1: current estimated bias
-    lrate1: current learning rate
-    startW1: in case update blows up it will start again from startW1
-    * Output
-    W1: updated mixing matrix
-    bias: updated bias
-    lrate1: updated learning rate
-    """
-    NCOMP, NVOX = x_white.shape
-    block1 = int(np.floor(np.sqrt(NVOX / 3)))
-    permute1 = permutation(NVOX)
-    for start in range(0, NVOX, block1):
-        if start + block1 < NVOX:
-            tt2 = start + block1
-        else:
-            tt2 = NVOX
-            block1 = NVOX - start
-
-        unmixed = np.dot(weights, x_white[:, permute1[start:tt2]]) + bias1
-        logit = 1 - (2 / (1 + np.exp(-unmixed)))
-        weights = weights + lrate1 * np.dot(block1 * np.eye(NCOMP) +
-                                         np.dot(logit, unmixed.T), weights)
-        bias1 = bias1 + lrate1 * logit.sum(axis=1).reshape(bias1.shape)
-        print(start)
-        # Checking if W blows up
-        if (np.isnan(weights)).any() or np.max(np.abs(weights)) > MAX_W:
-            print("Numeric error! restarting with lower learning rate")
-            lrate1 = lrate1 * ANNEAL
-            weights = np.eye(NCOMP)
-            bias1 = np.zeros((NCOMP, 1))
-            error = 1
-
-            if lrate1 > 1e-6 and \
-               matrix_rank(x_white) < NCOMP:
-                print("Data 1 is rank defficient"
-                      ". I cannot compute " +
-                      str(NCOMP) + " components.")
-                return (None, None, None, 1)
-
-            if lrate1 < 1e-6:
-                print("Weight matrix may"
-                      " not be invertible...")
-                return (None, None, None, 1)
-            break
-        else:
-            error = 0
-
-    return(weights, bias1, lrate1, error)
-
-# infomax1: single modality infomax
-
-
-def infomax1(x_white, W, verbose=False):
-    """Computes ICA infomax in whitened data
-    Decomposes x_white as x_white=AS
-    *Input
-    x_white: whitened data (Use PCAwhiten)
-    verbose: flag to print optimization updates
-    *Output
-    A : mixing matrix
-    S : source matrix
-    W : unmixing matrix
-    """
-    NCOMP = x_white.shape[0]
-    # Initialization
-    weights = W
-    old_weights = np.eye(NCOMP)
-    d_weigths = np.zeros(NCOMP)
-    old_d_weights = np.zeros(NCOMP)
-    lrate = 0.005 / np.log(NCOMP)
-    bias = np.zeros((NCOMP, 1))
-    change = 1
-    angle_delta = 0
-    if verbose:
-        print("Beginning ICA training...")
-    step = 1
-
-    while step < MAX_STEP and change > W_STOP:
-
-        (weights, bias, lrate, error) = w_update(weights, x_white, bias, lrate)
-
-        if error != 0:
-            step = 1
-            error = 0
-            lrate = lrate * ANNEAL
-            weights = np.eye(NCOMP)
-            old_weights = np.eye(NCOMP)
-            d_weigths = np.zeros(NCOMP)
-            old_d_weights = np.zeros(NCOMP)
-            bias = np.zeros((NCOMP, 1))
-        else:
-            d_weigths = weights - old_weights
-            change = norm(d_weigths)**2
-
-            if step > 2:
-                angle_delta = np.arccos(
-                    np.sum(d_weigths * old_d_weights) /
-                    (norm(d_weigths) * norm(old_d_weights) + 1e-8)
-                ) * 180 / np.pi
-
-            old_weights = np.copy(weights)
-
-            if angle_delta > 60:
-                lrate = lrate * ANNEAL
-                old_d_weights = np.copy(d_weigths)
-            elif step == 1:
-                old_d_weights = np.copy(d_weigths)
-
-            if verbose and change < W_STOP:
-                print("Step %d: Lrate %.1e,"
-                      "Wchange %.1e,"
-                      "Angle %.2f" % (step, lrate,
-                                      change, angle_delta))
-
-        step = step + 1
-
-    # A,S,W
-    return (inv(weights), np.dot(weights, x_white), weights)
-
-# Single modality ICA
-
-
-def ica1(x_raw, ncomp, W, verbose=False):
-    '''
-    Single modality Independent Component Analysis
-    '''
-    if verbose:
-        print("Whitening data...")
-    x_white, _, dewhite = pca_whiten(x_raw, ncomp)
-    if verbose:
-        print('x_white shape: %d, %d' % x_white.shape)
-        print("Done.")
-    if verbose:
-        print("Running INFOMAX-ICA ...")
-    mixer, sources, unmixer = infomax1(x_white, W, verbose)
-    mixer = np.dot(dewhite, mixer)
-
-    scale = sources.std(axis=1).reshape((-1, 1))
-    sources = sources / scale
-    scale = scale.reshape((1, -1))
-    mixer = mixer * scale
-
-    if verbose:
-        print("Done.")
-    return unmixer
-#
-#
-# def icax(x_raw, ncomp, verbose=True):
-#
-#     if verbose:
-#         print("Whitening data...")
-#     x_white, _, dewhite = pca_whiten(x_raw, ncomp)
-#
-#     mixer_list = []
-#     sources_list = []
-#     for it in range(10):
-#         if verbose:
-#             print('Run number %d' % it)
-#             print("Running INFOMAX-ICA ...")
-#         mixer, sources, unmix = infomax1(x_white, verbose)
-#         mixer_list.append(mixer)
-#         sources_list.append(sources)
-#
-#     # Reorder all sources to the order of the first
-#     S1 = sources_list[0]
-#     for it in range(1, 10):
-#         S2 = sources_list[it]
-#         A2 = mixer_list[it]
-#         cor_m = np.corrcoef(S1, S2)[:ncomp, ncomp:]
-#         idx = np.argmax(np.abs(cor_m), axis=1)
-#         S2 = S2[idx, :]
-#         A2 = A2[:, idx]
-#         cor_m = np.corrcoef(S1, S2)[:ncomp, ncomp:]
-#         S2 = S2 * np.sign(np.diag(cor_m)).reshape((ncomp, 1))
-#         A2 = A2 * np.sign(np.diag(cor_m)).reshape((1, ncomp))
-#         sources_list[it] = S2
-#         mixer_list[it] = A2
-#
-#     # Average sources
-#     temp_sources = np.zeros(sources.shape)
-#     temp_mixer = np.zeros(mixer.shape)
-#     for sources, mixer in zip(sources_list, mixer_list):
-#         temp_sources = temp_sources + sources
-#         temp_mixer = temp_mixer + mixer
-#
-#     temp_sources = temp_sources / 10.0
-#     temp_mixer = temp_mixer / 10.0
-#
-#     return (temp_mixer, temp_sources)
 
 def g(x):
     return np.tanh(x)
@@ -334,14 +74,12 @@ def ica(X, iterations, tolerance=1e-5):
     X = whitening(X)
     components_nr = X.shape[0]
     W = np.zeros((components_nr, components_nr), dtype=X.dtype)
-    # W = ica1(X,2)
     loop = [0]
     print("components_nr")
     print(components_nr)
 
     for i in range(components_nr):
         w = np.random.rand(components_nr)
-        # w = W[i]
         # print(w)
         # print("///////////////////////////////")
         for j in range(iterations):
@@ -363,7 +101,6 @@ def ica(X, iterations, tolerance=1e-5):
         # print("///////////////////////////////")
         W[i, :] = w
 
-    W = ica1(X,2,W)
     S = np.dot(W, X)
     print(W)
 
@@ -397,16 +134,14 @@ def plot_mixture_sources_predictions(X, original_sources, S, ch):
     if plot_flg == 1:
         if x_flg == 1:
             # plotpath1 = path.png_ica + "/" + d + "/" + i + "/複合+複合2/各チャンネルの比較/" + str(ch) + "ch" #
-            plotpath1 = path.png_ica_new + "/" + i + "/" + d + "/" + s + "/" + "fastICA+infomax" + "/各チャンネルの比較/" + str(
-                ch) + "ch"
+            plotpath1 = path.png_ica_new + "/" + i + "/" + d + "/" + s + "/" + "fastICA" + "/各チャンネルの比較/" + str(ch) + "ch"
         elif x_flg == 2:
             plotpath1 = path.png_ica + "/" + d + "/" + i + "/複合+手首/各チャンネルの比較/" + str(ch) + "ch"
         else:
             plotpath1 = path.png_ica + "/" + d + "/" + i + "/複合+指/各チャンネルの比較/" + str(ch) + "ch"
         plt.savefig(plotpath1)
         # plt.show()
-    else:
-        plt.show()
+    else: plt.show()
 
 
 def mix_sources(mixtures, apply_noise=False):
@@ -441,16 +176,16 @@ def min_max2(l, r, min_):
 
 
 def mapping(ch_list):
-    len_num = len(ch_list[ 0 ])
+    len_num = len(ch_list[0])
     x = np.linspace(0, len_num, len_num)
-    y0 = ch_list[ 0 ]
-    y1 = ch_list[ 1 ]
-    y2 = ch_list[ 2 ]
-    y3 = ch_list[ 3 ]
-    y4 = ch_list[ 4 ]
-    y5 = ch_list[ 5 ]
-    y6 = ch_list[ 6 ]
-    y7 = ch_list[ 7 ]
+    y0 = ch_list[0]
+    y1 = ch_list[1]
+    y2 = ch_list[2]
+    y3 = ch_list[3]
+    y4 = ch_list[4]
+    y5 = ch_list[5]
+    y6 = ch_list[6]
+    y7 = ch_list[7]
 
     y0_max = max_ch(y0)
     y1_max = max_ch(y1)
@@ -461,17 +196,13 @@ def mapping(ch_list):
     y6_max = max_ch(y6)
     y7_max = max_ch(y7)
 
-
-    max_list = [ y0_max[ 0 ], y1_max[ 0 ], y2_max[ 0 ], y3_max[ 0 ], y4_max[ 0 ], y5_max[ 0 ], y6_max[ 0 ],
-                 y7_max[ 0 ] ]
-    len_list = [ y0_max[ 1 ], y1_max[ 1 ], y2_max[ 1 ], y3_max[ 1 ], y4_max[ 1 ], y5_max[ 1 ], y6_max[ 1 ],
-                 y7_max[ 1 ] ]
-
+    max_list = [y0_max[0], y1_max[0], y2_max[0], y3_max[0], y4_max[0], y5_max[0], y6_max[0], y7_max[0]]
     # max_list = [ y0_max[ 0 ], y1_max[ 0 ], y2_max[ 0 ], y3_max[ 0 ]]
+    len_list = [y0_max[1], y1_max[1], y2_max[1], y3_max[1], y4_max[1], y5_max[1], y6_max[1], y7_max[1]]
     # len_list = [ y0_max[ 1 ], y1_max[ 1 ], y2_max[ 1 ], y3_max[ 1 ]]
 
     range_ = max(max_list)
-    min_ = len_list[ max_list.index(range_) ]
+    min_ = len_list[max_list.index(range_)]
 
     y0 = min_max(y0, range_, min(y0))
     y1 = min_max(y1, range_, min(y1))
@@ -491,8 +222,7 @@ def mapping(ch_list):
     y6 = center2(y6)
     y7 = center2(y7)
 
-    new_ch_list = [ y0, y1, y2, y3, y4, y5, y6, y7 ]
-
+    new_ch_list = [y0, y1, y2, y3, y4, y5, y6, y7]
     # new_ch_list = [ y0, y1, y2, y3]
 
     return new_ch_list
@@ -500,23 +230,24 @@ def mapping(ch_list):
 def mapping_1(ch_list1, ch_list2):
     # len_num = len(ch_list[0])
     # x = np.linspace(0, len_num, len_num)
-    y0_0 = ch_list1[ 0 ]
-    y0_1 = ch_list1[ 1 ]
-    y0_2 = ch_list1[ 2 ]
-    y0_3 = ch_list1[ 3 ]
-    y0_4 = ch_list1[ 4 ]
-    y0_5 = ch_list1[ 5 ]
-    y0_6 = ch_list1[ 6 ]
-    y0_7 = ch_list1[ 7 ]
+    y0_0 = ch_list1[0]
+    y0_1 = ch_list1[1]
+    y0_2 = ch_list1[2]
+    y0_3 = ch_list1[3]
+    y0_4 = ch_list1[4]
+    y0_5 = ch_list1[5]
+    y0_6 = ch_list1[6]
+    y0_7 = ch_list1[7]
 
-    y1_0 = ch_list2[ 0 ]
-    y1_1 = ch_list2[ 1 ]
-    y1_2 = ch_list2[ 2 ]
-    y1_3 = ch_list2[ 3 ]
-    y1_4 = ch_list2[ 4 ]
-    y1_5 = ch_list2[ 5 ]
-    y1_6 = ch_list2[ 6 ]
-    y1_7 = ch_list2[ 7 ]
+
+    y1_0 = ch_list2[0]
+    y1_1 = ch_list2[1]
+    y1_2 = ch_list2[2]
+    y1_3 = ch_list2[3]
+    y1_4 = ch_list2[4]
+    y1_5 = ch_list2[5]
+    y1_6 = ch_list2[6]
+    y1_7 = ch_list2[7]
 
     y0_0_max = max_ch(y0_0)
     y0_1_max = max_ch(y0_1)
@@ -536,21 +267,18 @@ def mapping_1(ch_list1, ch_list2):
     y1_6_max = max_ch(y1_6)
     y1_7_max = max_ch(y1_7)
 
-    max_list = [ y0_0_max[ 0 ], y0_1_max[ 0 ], y0_2_max[ 0 ], y0_3_max[ 0 ], y0_4_max[ 0 ], y0_5_max[ 0 ],
-                 y0_6_max[ 0 ], y0_7_max[ 0 ],
-                 y1_0_max[ 0 ], y1_1_max[ 0 ], y1_2_max[ 0 ], y1_3_max[ 0 ], y1_4_max[ 0 ], y1_5_max[ 0 ],
-                 y1_6_max[ 0 ], y1_7_max[ 0 ] ]
-    len_list = [ y0_0_max[ 1 ], y0_1_max[ 1 ], y0_2_max[ 1 ], y0_3_max[ 1 ], y0_4_max[ 1 ], y0_5_max[ 1 ],
-                 y0_6_max[ 1 ], y0_7_max[ 1 ],
-                 y1_0_max[ 1 ], y1_1_max[ 1 ], y1_2_max[ 1 ], y1_3_max[ 1 ], y1_4_max[ 1 ], y1_5_max[ 1 ],
-                 y1_6_max[ 1 ], y1_7_max[ 1 ] ]
+    max_list = [y0_0_max[0], y0_1_max[0], y0_2_max[0], y0_3_max[0], y0_4_max[0], y0_5_max[0], y0_6_max[0], y0_7_max[0],
+                y1_0_max[0], y1_1_max[0], y1_2_max[0], y1_3_max[0], y1_4_max[0], y1_5_max[0], y1_6_max[0], y1_7_max[0]]
+    len_list = [y0_0_max[1], y0_1_max[1], y0_2_max[1], y0_3_max[1], y0_4_max[1], y0_5_max[1], y0_6_max[1], y0_7_max[1],
+                y1_0_max[1], y1_1_max[1], y1_2_max[1], y1_3_max[1], y1_4_max[1], y1_5_max[1], y1_6_max[1], y1_7_max[1]]
     # max_list = [ y0_0_max[ 0 ], y0_1_max[ 0 ], y0_2_max[ 0 ], y0_3_max[ 0 ],
     #              y1_0_max[ 0 ], y1_1_max[ 0 ], y1_2_max[ 0 ], y1_3_max[ 0 ]]
     # len_list = [ y0_0_max[ 1 ], y0_1_max[ 1 ], y0_2_max[ 1 ], y0_3_max[ 1 ],
     #              y1_0_max[ 1 ], y1_1_max[ 1 ], y1_2_max[ 1 ], y1_3_max[ 1 ]]
 
+    # print(max_list)
     range_ = max(max_list)
-    min_ = len_list[ max_list.index(range_) ]
+    min_ = len_list[max_list.index(range_)]
 
     y0_0 = min_max(y0_0, range_, min(y0_0))
     y0_1 = min_max(y0_1, range_, min(y0_1))
@@ -611,14 +339,14 @@ def mapping_1(ch_list1, ch_list2):
     # len_list = [y0_0_max[1], y0_1_max[1], y0_2_max[1], y0_3_max[1], y0_4_max[1], y0_5_max[1], y0_6_max[1], #
     #             y1_0_max[1], y1_1_max[1], y1_2_max[1], y1_3_max[1], y1_4_max[1], y1_5_max[1], y1_6_max[1]] #
 
-    max_0 = [ y0_0_max[ 0 ], y1_0_max[ 0 ] ]
-    max_1 = [ y0_1_max[ 0 ], y1_1_max[ 0 ] ]
-    max_2 = [ y0_2_max[ 0 ], y1_2_max[ 0 ] ]
-    max_3 = [ y0_3_max[ 0 ], y1_3_max[ 0 ] ]
-    max_4 = [ y0_4_max[ 0 ], y1_4_max[ 0 ] ]
-    max_5 = [ y0_5_max[ 0 ], y1_5_max[ 0 ] ]
-    max_6 = [ y0_6_max[ 0 ], y1_6_max[ 0 ] ]
-    max_7 = [ y0_7_max[ 0 ], y1_7_max[ 0 ] ]
+    max_0 = [y0_0_max[0], y1_0_max[0]]
+    max_1 = [y0_1_max[0], y1_1_max[0]]
+    max_2 = [y0_2_max[0], y1_2_max[0]]
+    max_3 = [y0_3_max[0], y1_3_max[0]]
+    max_4 = [y0_4_max[0], y1_4_max[0]]
+    max_5 = [y0_5_max[0], y1_5_max[0]]
+    max_6 = [y0_6_max[0], y1_6_max[0]]
+    max_7 = [y0_7_max[0], y1_7_max[0]]
 
     range_0 = max(max_0)
     range_1 = max(max_1)
@@ -628,7 +356,7 @@ def mapping_1(ch_list1, ch_list2):
     range_5 = max(max_5)
     range_6 = max(max_6)
     range_7 = max(max_7)
-    min_ = len_list[ max_list.index(range_) ]
+    min_ = len_list[max_list.index(range_)]
 
     y0_0 = min_max(y0_0, range_0, min(y0_0))
     y0_1 = min_max(y0_1, range_1, min(y0_1))
@@ -664,12 +392,12 @@ def mapping_1(ch_list1, ch_list2):
     # y1_5 = center2(y1_5)
     # y1_6 = center2(y1_6)
 
-    new_ch_list_0 = [ y0_0, y0_1, y0_2, y0_3, y0_4, y0_5, y0_6, y0_7 ]
-    new_ch_list_1 = [ y1_0, y1_1, y1_2, y1_3, y1_4, y1_5, y1_6, y1_7 ]
+    new_ch_list_0 = [y0_0, y0_1, y0_2, y0_3, y0_4, y0_5, y0_6, y0_7]
+    new_ch_list_1 = [y1_0, y1_1, y1_2, y1_3, y1_4, y1_5, y1_6, y1_7]
     # new_ch_list_0 = [ y0_0, y0_1, y0_2, y0_3]
     # new_ch_list_1 = [ y1_0, y1_1, y1_2, y1_3]
 
-    new_ch_list = [ new_ch_list_0, new_ch_list_1 ]
+    new_ch_list = [new_ch_list_0, new_ch_list_1]
 
     return new_ch_list
 
@@ -735,25 +463,25 @@ def sim_pearson(d1, d2):
 
 def write_plot(ch_list, name):
     # print("test/" + d + "/" + i + "/" + j + "/" + l + ".CSV/")
-    len_num = len(ch_list[ 0 ])
+    len_num = len(ch_list[0])
     x = np.linspace(0, len_num, len_num)
-    y0 = ch_list[ 0 ]
-    y1 = ch_list[ 1 ]
-    y2 = ch_list[ 2 ]
-    y3 = ch_list[ 3 ]
-    y4 = ch_list[ 4 ]
-    y5 = ch_list[ 5 ]
-    y6 = ch_list[ 6 ]
-    y7 = ch_list[ 7 ]
+    y0 = ch_list[0]
+    y1 = ch_list[1]
+    y2 = ch_list[2]
+    y3 = ch_list[3]
+    y4 = ch_list[4]
+    y5 = ch_list[5]
+    y6 = ch_list[6]
+    y7 = ch_list[7]
 
-    labels0 = [ -0.5, 0.5 ]
-    labels1 = [ -0.5, 0.5 ]
-    labels2 = [ -0.5, 0.5 ]
-    labels3 = [ -0.5, 0.5 ]
-    labels4 = [ -0.5, 0.5 ]
-    labels5 = [ -0.5, 0.5 ]
-    labels6 = [ -0.5, 0.5 ]
-    labels7 = [ -0.5, 0.5 ]
+    labels0 = [-0.5, 0.5]
+    labels1 = [-0.5, 0.5]
+    labels2 = [-0.5, 0.5]
+    labels3 = [-0.5, 0.5]
+    labels4 = [-0.5, 0.5]
+    labels5 = [-0.5, 0.5]
+    labels6 = [-0.5, 0.5]
+    labels7 = [-0.5, 0.5]
 
     l0, l1, l2, l3, l4, l5, l6, l7 = "ch1", "ch2", "ch3", "ch4", "ch5", "ch6", "ch7", "ch8"
     o0, o1, o2, o3, o4, o5, o6, o7 = 1, 3, 5, 7, 9, 11, 13, 15
@@ -767,14 +495,14 @@ def write_plot(ch_list, name):
     # o5 *= 5
     # o6 *= 5
 
-    yticks0 = [ la + o0 for la in labels0 ]
-    yticks1 = [ la + o1 for la in labels1 ]
-    yticks2 = [ la + o2 for la in labels2 ]
-    yticks3 = [ la + o3 for la in labels3 ]
-    yticks4 = [ la + o4 for la in labels4 ]
-    yticks5 = [ la + o5 for la in labels5 ]
-    yticks6 = [ la + o6 for la in labels6 ]
-    yticks7 = [ la + o7 for la in labels7 ]
+    yticks0 = [la + o0 for la in labels0]
+    yticks1 = [la + o1 for la in labels1]
+    yticks2 = [la + o2 for la in labels2]
+    yticks3 = [la + o3 for la in labels3]
+    yticks4 = [la + o4 for la in labels4]
+    yticks5 = [la + o5 for la in labels5]
+    yticks6 = [la + o6 for la in labels6]
+    yticks7 = [la + o7 for la in labels7]
 
     ytls = labels0 + labels1 + labels2 + labels3 + labels4 + labels5 + labels6 + labels7
     ytks = yticks0 + yticks1 + yticks2 + yticks3 + yticks4 + yticks5 + yticks6 + yticks7
@@ -815,8 +543,8 @@ def write_plot(ch_list, name):
     plt.axes().set_yticklabels(ytls)
     plt.legend(loc="upper right", fontsize=8)
 
-    plt.gca().spines[ 'right' ].set_visible(False)
-    plt.gca().spines[ 'top' ].set_visible(False)
+    plt.gca().spines['right'].set_visible(False)
+    plt.gca().spines['top'].set_visible(False)
     plt.tick_params(labelright=False, labeltop=False)
     plt.tick_params(right=False, top=False)
     plt.title(name)
@@ -825,22 +553,21 @@ def write_plot(ch_list, name):
     if plot_flg == 1:
         if x_flg == 1:
             # plotpath2 = path.png_ica + "/" + d + "/" + i + "/複合+複合2/" + name
-            plotpath2 = path.png_ica_new + "/" + i + "/" + d + "/" + s + "/" + "fastICA+infomax" + "/" + name
+            plotpath2 = path.png_ica_new + "/" + i + "/" + d + "/" + s + "/" + "fastICA" + "/" + name
         elif x_flg == 2:
             plotpath2 = path.png_ica + "/" + d + "/" + i + "/複合+手首/" + name
         else:
             plotpath2 = path.png_ica + "/" + d + "/" + i + "/複合+指/" + name
         plt.savefig(plotpath2)
         # plt.show()
-    else:
-        plt.show()
+    else: plt.show()
     plt.close('all')
 
 
 
 
 
-nf_all = open(path.png_ica_new + "/" + "結果まとめ_fastICA+infomax.CSV", 'w', encoding="utf_8_sig")
+nf_all = open(path.png_ica_new + "/" + "結果まとめ_fastICA.CSV", 'w', encoding="utf_8_sig")
 dataWriter_all = csv.writer(nf_all)
 all_average = 0
 for i in path.new_subject:
@@ -979,14 +706,27 @@ for i in path.new_subject:
             # X5 = mix_sources([tekubi_ch5, yubi_ch5])
             # X6 = mix_sources([tekubi_ch6, yubi_ch6])
 
-            S0 = ica(X0, iterations=1000)
-            S1 = ica(X1, iterations=1000)
-            S2 = ica(X2, iterations=1000)
-            S3 = ica(X3, iterations=1000)
-            S4 = ica(X4, iterations=1000)
-            S5 = ica(X5, iterations=1000)
-            S6 = ica(X6, iterations=1000)
-            S7 = ica(X7, iterations=1000)
+            # S0 = ica(X0, iterations=1000)
+            # S1 = ica(X1, iterations=1000)
+            # S2 = ica(X2, iterations=1000)
+            # S3 = ica(X3, iterations=1000)
+            # S4 = ica(X4, iterations=1000)
+            # S5 = ica(X5, iterations=1000)
+            # S6 = ica(X6, iterations=1000)
+            # S7 = ica(X7, iterations=1000)
+            # print(S0)
+
+            S0 = SICA.fit_transform(X0)
+            S1 = SICA.fit_transform(X1)
+            S2 = SICA.fit_transform(X2)
+            S3 = SICA.fit_transform(X3)
+            S4 = SICA.fit_transform(X4)
+            S5 = SICA.fit_transform(X5)
+            S6 = SICA.fit_transform(X6)
+            S7 = SICA.fit_transform(X7)
+
+            # print(S0)
+
 
             # S0 = np.array(jadeR(X0))
             # S1 = np.array(jadeR(X1))
@@ -1017,24 +757,24 @@ for i in path.new_subject:
             X_ch_list = [X0, X1, X2, X3, X4, X5, X6, X7]
 
 
-            tekubi_ch_list_abs = [abs(tekubi_ch0)**2, abs(tekubi_ch1)**2, abs(tekubi_ch2)**2, abs(tekubi_ch3)**2,
-                                  abs(tekubi_ch4)**2, abs(tekubi_ch5)**2, abs(tekubi_ch6)**2, abs(tekubi_ch7)**2]
-            yubi_ch_list_abs = [abs(yubi_ch0)**2, abs(yubi_ch1)**2, abs(yubi_ch2)**2, abs(yubi_ch3)**2,
-                                abs(yubi_ch4)**2, abs(yubi_ch5)**2, abs(yubi_ch6)**2, abs(yubi_ch7)**2]
-            mix_ch_list_abs = [abs(mix_ch0)**2, abs(mix_ch1)**2, abs(mix_ch2)**2, abs(mix_ch3)**2,
-                               abs(mix_ch4)**2, abs(mix_ch5)**2, abs(mix_ch6)**2, abs(mix_ch7)**2]
-            # mix_2_ch_list_abs = [abs(mix_2_ch0)**2, abs(mix_2_ch1)**2, abs(mix_2_ch2)**2, abs(mix_2_ch3)**2, #
-            #                    abs(mix_2_ch4)**2, abs(mix_2_ch5)**2, abs(mix_2_ch6)**2] #
-            S_ch_list_abs = [abs(S0)**2, abs(S1)**2, abs(S2)**2, abs(S3)**2, abs(S4)**2, abs(S5)**2, abs(S6)**2, abs(S7)**2]
-            X_ch_list_abs = [abs(X0)**2, abs(X1)**2, abs(X2)**2, abs(X3)**2, abs(X4)**2, abs(X5)**2, abs(X6)**2, abs(X7)**2]
-            S_0_ch_list_abs = [abs(S0[0])**2, abs(S1[0])**2, abs(S2[0])**2, abs(S3[0])**2, abs(S4[0])**2,
-                               abs(S5[0])**2, abs(S6[0])**2, abs(S7[0])**2]
-            S_1_ch_list_abs = [abs(S0[1])**2, abs(S1[1])**2, abs(S2[1])**2, abs(S3[1])**2, abs(S4[1])**2,
-                               abs(S5[1])**2, abs(S6[1])**2, abs(S7[1])**2]
-            X_0_ch_list_abs = [abs(X0[0])**2, abs(X1[0])**2, abs(X2[0])**2, abs(X3[0])**2, abs(X4[0])**2,
-                               abs(X5[0])**2, abs(X6[0])**2, abs(X7[0])**2]
-            X_1_ch_list_abs = [abs(X0[1])**2, abs(X1[1])**2, abs(X2[1])**2, abs(X3[1])**2, abs(X4[1])**2,
-                               abs(X5[1])**2, abs(X6[1])**2, abs(X7[1])**2]
+            tekubi_ch_list_abs = [abs(tekubi_ch0), abs(tekubi_ch1), abs(tekubi_ch2), abs(tekubi_ch3),
+                                  abs(tekubi_ch4), abs(tekubi_ch5), abs(tekubi_ch6), abs(tekubi_ch7)]
+            yubi_ch_list_abs = [abs(yubi_ch0), abs(yubi_ch1), abs(yubi_ch2), abs(yubi_ch3),
+                                abs(yubi_ch4), abs(yubi_ch5), abs(yubi_ch6), abs(yubi_ch7)]
+            mix_ch_list_abs = [abs(mix_ch0), abs(mix_ch1), abs(mix_ch2), abs(mix_ch3),
+                               abs(mix_ch4), abs(mix_ch5), abs(mix_ch6), abs(mix_ch7)]
+            mix_2_ch_list_abs = [abs(mix_2_ch0), abs(mix_2_ch1), abs(mix_2_ch2), abs(mix_2_ch3), #
+                               abs(mix_2_ch4), abs(mix_2_ch5), abs(mix_2_ch6)] #
+            S_ch_list_abs = [abs(S0), abs(S1), abs(S2), abs(S3), abs(S4), abs(S5), abs(S6), abs(S7)]
+            X_ch_list_abs = [abs(X0), abs(X1), abs(X2), abs(X3), abs(X4), abs(X5), abs(X6), abs(X7)]
+            S_0_ch_list_abs = [abs(S0[0]), abs(S1[0]), abs(S2[0]), abs(S3[0]), abs(S4[0]),
+                               abs(S5[0]), abs(S6[0]), abs(S7[0])]
+            S_1_ch_list_abs = [abs(S0[1]), abs(S1[1]), abs(S2[1]), abs(S3[1]), abs(S4[1]),
+                               abs(S5[1]), abs(S6[1]), abs(S7[1])]
+            X_0_ch_list_abs = [abs(X0[0]), abs(X1[0]), abs(X2[0]), abs(X3[0]), abs(X4[0]),
+                               abs(X5[0]), abs(X6[0]), abs(X7[0])]
+            X_1_ch_list_abs = [abs(X0[1]), abs(X1[1]), abs(X2[1]), abs(X3[1]), abs(X4[1]),
+                               abs(X5[1]), abs(X6[1]), abs(X7[1])]
 
             # tekubi_ch_list = [tekubi_ch0, tekubi_ch1, tekubi_ch2, tekubi_ch3]
             # mix_ch_list = [mix_ch0, mix_ch1, mix_ch2, mix_ch3]
@@ -1386,30 +1126,30 @@ for i in path.new_subject:
             print("////////////////////////////////////////////////////////")
             print("ch1")
             print()
-            print(tekubi[ 0 ].shape)
-            clf0.fit(S_ch_0, tekubi[ 0 ])
+            print(tekubi[0].shape)
+            clf0.fit(S_ch_0, tekubi[0])
             print(clf0.coef_)
-            b0_0 = (clf0.coef_[ 0 ] * ((S0_0v / t_0v) ** 0.5)) ** 2
-            b0_1 = (clf0.coef_[ 1 ] * ((S1_0v / t_0v) ** 0.5)) ** 2
-            ren0 = sim_pearson(S_ch_0[ 0 ], tekubi[ 0 ])
-            ren0_1 = sim_pearson(S_ch_0[ 1 ], tekubi[ 0 ])
-            score0 = clf0.score(S_ch_0, tekubi[ 0 ])
+            b0_0 = (clf0.coef_[0] * ((S0_0v / t_0v) ** 0.5)) ** 2
+            b0_1 = (clf0.coef_[1] * ((S1_0v / t_0v) ** 0.5)) ** 2
+            ren0 = sim_pearson(S_ch_0[0], tekubi[0])
+            ren0_1 = sim_pearson(S_ch_0[1], tekubi[0])
+            score0 = clf0.score(S_ch_0, tekubi[0])
 
-            clf0.fit(S_ch_0, yubi[ 0 ])
+            clf0.fit(S_ch_0, yubi[0])
             print(clf0.coef_)
-            b10_0 = (clf0.coef_[ 0 ] * ((S0_0v / y_0v) ** 0.5)) ** 2
-            b10_1 = (clf0.coef_[ 1 ] * ((S1_0v / y_0v) ** 0.5)) ** 2
-            ren10 = sim_pearson(S_ch_0[ 0 ], yubi[ 0 ])
-            ren10_1 = sim_pearson(S_ch_0[ 1 ], yubi[ 0 ])
-            score10 = clf0.score(S_ch_0, yubi[ 0 ])
+            b10_0 = (clf0.coef_[0] * ((S0_0v / y_0v) ** 0.5)) ** 2
+            b10_1 = (clf0.coef_[1] * ((S1_0v / y_0v) ** 0.5)) ** 2
+            ren10 = sim_pearson(S_ch_0[0], yubi[0])
+            ren10_1 = sim_pearson(S_ch_0[1], yubi[0])
+            score10 = clf0.score(S_ch_0, yubi[0])
             if abs(ren0) > abs(ren10):
-                s_t0 = S_ch_0[ 0 ]
-                s_y0 = S_ch_0[ 1 ]
+                s_t0 = S_ch_0[0]
+                s_y0 = S_ch_0[1]
             else:
-                s_t0 = S_ch_0[ 1 ]
-                s_y0 = S_ch_0[ 0 ]
+                s_t0 = S_ch_0[1]
+                s_y0 = S_ch_0[0]
 
-            ren_list0 = [ ren0, ren0_1, ren10, ren10_1 ]
+            ren_list0 = [ren0, ren0_1, ren10, ren10_1]
             if ren_list0.index(max(ren_list0)) == 0 or ren_list0.index(max(ren_list0)) == 3:
                 ren_list0 = [ ren_list0[ r ] for r in range(len(ren_list0)) if r == 0 or r == 3 ]
             else:
@@ -1450,27 +1190,27 @@ for i in path.new_subject:
             print("////////////////////////////////////////////////////////")
             print("ch2")
             print()
-            clf1.fit(S_ch_1, tekubi[ 1 ])
+            clf1.fit(S_ch_1, tekubi[1])
             print(clf1.coef_)
-            b1_0 = (clf1.coef_[ 0 ] * ((S0_1v / t_1v) ** 0.5)) ** 2
-            b1_1 = (clf1.coef_[ 1 ] * ((S1_1v / t_1v) ** 0.5)) ** 2
-            ren1 = sim_pearson(S_ch_1[ 0 ], tekubi[ 1 ])
-            ren1_1 = sim_pearson(S_ch_1[ 1 ], tekubi[ 1 ])
-            score1 = clf1.score(S_ch_1, tekubi[ 1 ])
+            b1_0 = (clf1.coef_[0] * ((S0_1v / t_1v) ** 0.5)) ** 2
+            b1_1 = (clf1.coef_[1] * ((S1_1v / t_1v) ** 0.5)) ** 2
+            ren1 = sim_pearson(S_ch_1[0], tekubi[1])
+            ren1_1 = sim_pearson(S_ch_1[1], tekubi[1])
+            score1 = clf1.score(S_ch_1, tekubi[1])
 
-            clf1.fit(S_ch_1, yubi[ 1 ])
+            clf1.fit(S_ch_1, yubi[1])
             print(clf1.coef_)
-            b11_0 = (clf1.coef_[ 0 ] * ((S0_1v / y_1v) ** 0.5)) ** 2
-            b11_1 = (clf1.coef_[ 1 ] * ((S1_1v / y_1v) ** 0.5)) ** 2
-            ren11 = sim_pearson(S_ch_1[ 0 ], yubi[ 1 ])
-            ren11_1 = sim_pearson(S_ch_1[ 1 ], yubi[ 1 ])
-            score11 = clf1.score(S_ch_1, yubi[ 1 ])
+            b11_0 = (clf1.coef_[0] * ((S0_1v / y_1v) ** 0.5)) ** 2
+            b11_1 = (clf1.coef_[1] * ((S1_1v / y_1v) ** 0.5)) ** 2
+            ren11 = sim_pearson(S_ch_1[0], yubi[1])
+            ren11_1 = sim_pearson(S_ch_1[1], yubi[1])
+            score11 = clf1.score(S_ch_1, yubi[1])
             if abs(ren1) > abs(ren11):
-                s_t1 = S_ch_1[ 0 ]
-                s_y1 = S_ch_1[ 1 ]
+                s_t1 = S_ch_1[0]
+                s_y1 = S_ch_1[1]
             else:
-                s_t1 = S_ch_1[ 1 ]
-                s_y1 = S_ch_1[ 0 ]
+                s_t1 = S_ch_1[1]
+                s_y1 = S_ch_1[0]
 
             ren_list1 = [ ren1, ren1_1, ren11, ren11_1 ]
             if ren_list1.index(max(ren_list1)) == 0 or ren_list1.index(max(ren_list1)) == 3:
@@ -1513,27 +1253,27 @@ for i in path.new_subject:
             print("////////////////////////////////////////////////////////")
             print("ch3")
             print()
-            clf2.fit(S_ch_2, tekubi[ 2 ])
+            clf2.fit(S_ch_2, tekubi[2])
             print(clf2.coef_)
-            b2_0 = (clf2.coef_[ 0 ] * ((S0_2v / t_2v) ** 0.5)) ** 2
-            b2_1 = (clf2.coef_[ 1 ] * ((S1_2v / t_2v) ** 0.5)) ** 2
-            ren2 = sim_pearson(S_ch_2[ 0 ], tekubi[ 2 ])
-            ren2_1 = sim_pearson(S_ch_2[ 1 ], tekubi[ 2 ])
-            score2 = clf2.score(S_ch_2, tekubi[ 2 ])
+            b2_0 = (clf2.coef_[0] * ((S0_2v / t_2v) ** 0.5)) ** 2
+            b2_1 = (clf2.coef_[1] * ((S1_2v / t_2v) ** 0.5)) ** 2
+            ren2 = sim_pearson(S_ch_2[0], tekubi[2])
+            ren2_1 = sim_pearson(S_ch_2[1], tekubi[2])
+            score2 = clf2.score(S_ch_2, tekubi[2])
 
-            clf2.fit(S_ch_2, yubi[ 2 ])
+            clf2.fit(S_ch_2, yubi[2])
             print(clf2.coef_)
-            b12_0 = (clf2.coef_[ 0 ] * ((S0_2v / y_2v) ** 0.5)) ** 2
-            b12_1 = (clf2.coef_[ 1 ] * ((S1_2v / y_2v) ** 0.5)) ** 2
-            ren12 = sim_pearson(S_ch_2[ 0 ], yubi[ 2 ])
-            ren12_1 = sim_pearson(S_ch_2[ 1 ], yubi[ 2 ])
-            score12 = clf2.score(S_ch_2, yubi[ 2 ])
+            b12_0 = (clf2.coef_[0] * ((S0_2v / y_2v) ** 0.5)) ** 2
+            b12_1 = (clf2.coef_[1] * ((S1_2v / y_2v) ** 0.5)) ** 2
+            ren12 = sim_pearson(S_ch_2[0], yubi[2])
+            ren12_1 = sim_pearson(S_ch_2[1], yubi[2])
+            score12 = clf2.score(S_ch_2, yubi[2])
             if abs(ren2) > abs(ren12):
-                s_t2 = S_ch_2[ 0 ]
-                s_y2 = S_ch_2[ 1 ]
+                s_t2 = S_ch_2[0]
+                s_y2 = S_ch_2[1]
             else:
-                s_t2 = S_ch_2[ 1 ]
-                s_y2 = S_ch_2[ 0 ]
+                s_t2 = S_ch_2[1]
+                s_y2 = S_ch_2[0]
 
             ren_list2 = [ ren2, ren2_1, ren12, ren12_1 ]
             if ren_list2.index(max(ren_list2)) == 0 or ren_list2.index(max(ren_list2)) == 3:
@@ -1576,26 +1316,26 @@ for i in path.new_subject:
             print("////////////////////////////////////////////////////////")
             print("ch4")
             print()
-            clf3.fit(S_ch_3, tekubi[ 3 ])
+            clf3.fit(S_ch_3, tekubi[3])
             print(clf3.coef_)
-            b3_0 = (clf3.coef_[ 0 ] * ((S0_3v / t_3v) ** 0.5)) ** 2
-            b3_1 = (clf3.coef_[ 1 ] * ((S1_3v / t_3v) ** 0.5)) ** 2
-            ren3 = sim_pearson(S_ch_3[ 0 ], tekubi[ 3 ])
-            ren3_1 = sim_pearson(S_ch_3[ 1 ], tekubi[ 3 ])
-            score3 = clf3.score(S_ch_3, tekubi[ 3 ])
-            clf3.fit(S_ch_3, yubi[ 3 ])
+            b3_0 = (clf3.coef_[0] * ((S0_3v / t_3v) ** 0.5)) ** 2
+            b3_1 = (clf3.coef_[1] * ((S1_3v / t_3v) ** 0.5)) ** 2
+            ren3 = sim_pearson(S_ch_3[0], tekubi[3])
+            ren3_1 = sim_pearson(S_ch_3[1], tekubi[3])
+            score3 = clf3.score(S_ch_3, tekubi[3])
+            clf3.fit(S_ch_3, yubi[3])
             print(clf3.coef_)
-            b13_0 = (clf3.coef_[ 0 ] * ((S0_3v / y_3v) ** 0.5)) ** 2
-            b13_1 = (clf3.coef_[ 1 ] * ((S1_3v / y_3v) ** 0.5)) ** 2
-            ren13 = sim_pearson(S_ch_3[ 0 ], yubi[ 3 ])
-            ren13_1 = sim_pearson(S_ch_3[ 1 ], yubi[ 3 ])
-            score13 = clf3.score(S_ch_3, yubi[ 3 ])
+            b13_0 = (clf3.coef_[0] * ((S0_3v / y_3v) ** 0.5)) ** 2
+            b13_1 = (clf3.coef_[1] * ((S1_3v / y_3v) ** 0.5)) ** 2
+            ren13 = sim_pearson(S_ch_3[0], yubi[3])
+            ren13_1 = sim_pearson(S_ch_3[1], yubi[3])
+            score13 = clf3.score(S_ch_3, yubi[3])
             if abs(ren3) > abs(ren13):
-                s_t3 = S_ch_3[ 0 ]
-                s_y3 = S_ch_3[ 1 ]
+                s_t3 = S_ch_3[0]
+                s_y3 = S_ch_3[1]
             else:
-                s_t3 = S_ch_3[ 1 ]
-                s_y3 = S_ch_3[ 0 ]
+                s_t3 = S_ch_3[1]
+                s_y3 = S_ch_3[0]
 
             ren_list3 = [ ren3, ren3_1, ren13, ren13_1 ]
             if ren_list3.index(max(ren_list3)) == 0 or ren_list3.index(max(ren_list3)) == 3:
@@ -1638,26 +1378,26 @@ for i in path.new_subject:
             print("////////////////////////////////////////////////////////")
             print("ch5")
             print()
-            clf4.fit(S_ch_4, tekubi[ 4 ])
+            clf4.fit(S_ch_4, tekubi[4])
             print(clf4.coef_)
-            b4_0 = (clf4.coef_[ 0 ] * ((S0_4v / t_4v) ** 0.5)) ** 2
-            b4_1 = (clf4.coef_[ 1 ] * ((S1_4v / t_4v) ** 0.5)) ** 2
-            ren4 = sim_pearson(S_ch_4[ 0 ], tekubi[ 4 ])
-            ren4_1 = sim_pearson(S_ch_4[ 1 ], tekubi[ 4 ])
-            score4 = clf4.score(S_ch_4, tekubi[ 4 ])
-            clf4.fit(S_ch_4, yubi[ 4 ])
+            b4_0 = (clf4.coef_[0] * ((S0_4v / t_4v) ** 0.5)) ** 2
+            b4_1 = (clf4.coef_[1] * ((S1_4v / t_4v) ** 0.5)) ** 2
+            ren4 = sim_pearson(S_ch_4[0], tekubi[4])
+            ren4_1 = sim_pearson(S_ch_4[1], tekubi[4])
+            score4 = clf4.score(S_ch_4, tekubi[4])
+            clf4.fit(S_ch_4, yubi[4])
             print(clf4.coef_)
-            b14_0 = (clf4.coef_[ 0 ] * ((S0_4v / y_4v) ** 0.5)) ** 2
-            b14_1 = (clf4.coef_[ 1 ] * ((S1_4v / y_4v) ** 0.5)) ** 2
-            ren14 = sim_pearson(S_ch_4[ 0 ], yubi[ 4 ])
-            ren14_1 = sim_pearson(S_ch_4[ 1 ], yubi[ 4 ])
-            score14 = clf4.score(S_ch_4, yubi[ 4 ])
+            b14_0 = (clf4.coef_[0] * ((S0_4v / y_4v) ** 0.5)) ** 2
+            b14_1 = (clf4.coef_[1] * ((S1_4v / y_4v) ** 0.5)) ** 2
+            ren14 = sim_pearson(S_ch_4[0], yubi[4])
+            ren14_1 = sim_pearson(S_ch_4[1], yubi[4])
+            score14 = clf4.score(S_ch_4, yubi[4])
             if abs(ren4) > abs(ren14):
-                s_t4 = S_ch_4[ 0 ]
-                s_y4 = S_ch_4[ 1 ]
+                s_t4 = S_ch_4[0]
+                s_y4 = S_ch_4[1]
             else:
-                s_t4 = S_ch_4[ 1 ]
-                s_y4 = S_ch_4[ 0 ]
+                s_t4 = S_ch_4[1]
+                s_y4 = S_ch_4[0]
 
             ren_list4 = [ ren4, ren4_1, ren14, ren14_1 ]
             if ren_list4.index(max(ren_list4)) == 0 or ren_list4.index(max(ren_list4)) == 3:
@@ -1699,26 +1439,26 @@ for i in path.new_subject:
             print("////////////////////////////////////////////////////////")
             print("ch6")
             print()
-            clf5.fit(S_ch_5, tekubi[ 5 ])
+            clf5.fit(S_ch_5, tekubi[5])
             print(clf5.coef_)
-            b5_0 = (clf5.coef_[ 0 ] * ((S0_5v / t_5v) ** 0.5)) ** 2
-            b5_1 = (clf5.coef_[ 1 ] * ((S1_5v / t_5v) ** 0.5)) ** 2
-            ren5 = sim_pearson(S_ch_5[ 0 ], tekubi[ 5 ])
-            ren5_1 = sim_pearson(S_ch_5[ 1 ], tekubi[ 5 ])
-            score5 = clf5.score(S_ch_5, tekubi[ 5 ])
-            clf5.fit(S_ch_5, yubi[ 5 ])
+            b5_0 = (clf5.coef_[0] * ((S0_5v / t_5v) ** 0.5)) ** 2
+            b5_1 = (clf5.coef_[1] * ((S1_5v / t_5v) ** 0.5)) ** 2
+            ren5 = sim_pearson(S_ch_5[0], tekubi[5])
+            ren5_1 = sim_pearson(S_ch_5[1], tekubi[5])
+            score5 = clf5.score(S_ch_5, tekubi[5])
+            clf5.fit(S_ch_5, yubi[5])
             print(clf5.coef_)
-            b15_0 = (clf5.coef_[ 0 ] * ((S0_5v / y_5v) ** 0.5)) ** 2
-            b15_1 = (clf5.coef_[ 1 ] * ((S1_5v / y_5v) ** 0.5)) ** 2
-            ren15 = sim_pearson(S_ch_5[ 0 ], yubi[ 5 ])
-            ren15_1 = sim_pearson(S_ch_5[ 1 ], yubi[ 5 ])
-            score15 = clf5.score(S_ch_5, yubi[ 5 ])
+            b15_0 = (clf5.coef_[0] * ((S0_5v / y_5v) ** 0.5)) ** 2
+            b15_1 = (clf5.coef_[1] * ((S1_5v / y_5v) ** 0.5)) ** 2
+            ren15 = sim_pearson(S_ch_5[0], yubi[5])
+            ren15_1 = sim_pearson(S_ch_5[1], yubi[5])
+            score15 = clf5.score(S_ch_5, yubi[5])
             if abs(ren5) > abs(ren15):
-                s_t5 = S_ch_5[ 0 ]
-                s_y5 = S_ch_5[ 1 ]
+                s_t5 = S_ch_5[0]
+                s_y5 = S_ch_5[1]
             else:
-                s_t5 = S_ch_5[ 1 ]
-                s_y5 = S_ch_5[ 0 ]
+                s_t5 = S_ch_5[1]
+                s_y5 = S_ch_5[0]
 
             ren_list5 = [ ren5, ren5_1, ren15, ren15_1 ]
             if ren_list5.index(max(ren_list5)) == 0 or ren_list5.index(max(ren_list5)) == 3:
@@ -1760,13 +1500,13 @@ for i in path.new_subject:
             print("////////////////////////////////////////////////////////")
             print("ch7")
             print()
-            clf6.fit(S_ch_6, tekubi[ 6 ])
+            clf6.fit(S_ch_6, tekubi[6])
             print(clf6.coef_)
-            b6_0 = (clf6.coef_[ 0 ] * ((S0_6v / t_6v) ** 0.5)) ** 2
-            b6_1 = (clf6.coef_[ 1 ] * ((S1_6v / t_6v) ** 0.5)) ** 2
-            ren6 = sim_pearson(S_ch_6[ 0 ], tekubi[ 6 ])
-            ren6_1 = sim_pearson(S_ch_6[ 1 ], tekubi[ 6 ])
-            score6 = clf6.score(S_ch_6, tekubi[ 6 ])
+            b6_0 = (clf6.coef_[0] * ((S0_6v / t_6v) ** 0.5)) ** 2
+            b6_1 = (clf6.coef_[1] * ((S1_6v / t_6v) ** 0.5)) ** 2
+            ren6 = sim_pearson(S_ch_6[0], tekubi[6])
+            ren6_1 = sim_pearson(S_ch_6[1], tekubi[6])
+            score6 = clf6.score(S_ch_6, tekubi[6])
             clf6.fit(S_ch_6, yubi[ 6 ])
             print(clf6.coef_)
             b16_0 = (clf6.coef_[ 0 ] * ((S0_6v / y_6v) ** 0.5)) ** 2
@@ -1775,11 +1515,11 @@ for i in path.new_subject:
             ren16_1 = sim_pearson(S_ch_6[ 1 ], yubi[ 6 ])
             score16 = clf6.score(S_ch_6, yubi[ 6 ])
             if abs(ren6) > abs(ren16):
-                s_t6 = S_ch_6[ 0 ]
-                s_y6 = S_ch_6[ 1 ]
+                s_t6 = S_ch_6[0]
+                s_y6 = S_ch_6[1]
             else:
-                s_t6 = S_ch_6[ 1 ]
-                s_y6 = S_ch_6[ 0 ]
+                s_t6 = S_ch_6[1]
+                s_y6 = S_ch_6[0]
 
             ren_list6 = [ ren6, ren6_1, ren16, ren16_1 ]
             if ren_list6.index(max(ren_list6)) == 0 or ren_list6.index(max(ren_list6)) == 3:
@@ -1821,26 +1561,26 @@ for i in path.new_subject:
             print("////////////////////////////////////////////////////////")
             print("ch8")
             print()
-            clf7.fit(S_ch_7, tekubi[ 7 ])
+            clf7.fit(S_ch_7, tekubi[7])
             print(clf7.coef_)
-            b7_0 = (clf7.coef_[ 0 ] * ((S0_7v / t_7v) ** 0.5)) ** 2
-            b7_1 = (clf7.coef_[ 1 ] * ((S1_7v / t_7v) ** 0.5)) ** 2
-            ren7 = sim_pearson(S_ch_7[ 0 ], tekubi[ 7 ])
-            ren7_1 = sim_pearson(S_ch_7[ 1 ], tekubi[ 7 ])
-            score7 = clf7.score(S_ch_7, tekubi[ 7 ])
-            clf7.fit(S_ch_7, yubi[ 7 ])
+            b7_0 = (clf7.coef_[0] * ((S0_7v / t_7v) ** 0.5)) ** 2
+            b7_1 = (clf7.coef_[1] * ((S1_7v / t_7v) ** 0.5)) ** 2
+            ren7 = sim_pearson(S_ch_7[0], tekubi[7])
+            ren7_1 = sim_pearson(S_ch_7[1], tekubi[7])
+            score7 = clf7.score(S_ch_7, tekubi[7])
+            clf7.fit(S_ch_7, yubi[7])
             print(clf7.coef_)
-            b17_0 = (clf7.coef_[ 0 ] * ((S0_7v / y_7v) ** 0.5)) ** 2
-            b17_1 = (clf7.coef_[ 1 ] * ((S1_7v / y_7v) ** 0.5)) ** 2
-            ren17 = sim_pearson(S_ch_7[ 0 ], yubi[ 7 ])
-            ren17_1 = sim_pearson(S_ch_7[ 1 ], yubi[ 7 ])
-            score17 = clf7.score(S_ch_7, yubi[ 7 ])
+            b17_0 = (clf7.coef_[0] * ((S0_7v / y_7v) ** 0.5)) ** 2
+            b17_1 = (clf7.coef_[1] * ((S1_7v / y_7v) ** 0.5)) ** 2
+            ren17 = sim_pearson(S_ch_7[0], yubi[7])
+            ren17_1 = sim_pearson(S_ch_7[1], yubi[7])
+            score17 = clf7.score(S_ch_7, yubi[7])
             if abs(ren7) > abs(ren17):
-                s_t7 = S_ch_7[ 0 ]
-                s_y7 = S_ch_7[ 1 ]
+                s_t7 = S_ch_7[0]
+                s_y7 = S_ch_7[1]
             else:
-                s_t7 = S_ch_7[ 1 ]
-                s_y7 = S_ch_7[ 0 ]
+                s_t7 = S_ch_7[1]
+                s_y7 = S_ch_7[0]
 
             ren_list7 = [ ren7, ren7_1, ren17, ren17_1 ]
             if ren_list7.index(max(ren_list7)) == 0 or ren_list7.index(max(ren_list7)) == 3:
@@ -1881,149 +1621,146 @@ for i in path.new_subject:
             print()
             print("////////////////////////////////////////////////////////")
             print()
-            nf = open(path.png_ica_new + "/" + i + "/" + d + "/" + s + "/" + "fastICA" + "/" + "結果_fastICA.CSV", 'w',
-                      encoding="utf_8_sig")
+            nf = open(path.png_ica_new + "/" + i + "/" + d + "/" + s + "/" + "fastICA" + "/" + "結果_fastICA.CSV", 'w', encoding="utf_8_sig")
             dataWriter = csv.writer(nf)
-            dataWriter.writerow([ "ch1" ])
-            dataWriter.writerow([ "手首", "標準化偏差回帰係数1", b0_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b0_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b0_0 / (b0_0 + b0_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b0_1 / (b0_0 + b0_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren0 ])
-            dataWriter.writerow([ "", "相関係数2", ren0_1 ])
-            dataWriter.writerow([ "", "決定係数", score0 ])
-            dataWriter.writerow([ "指", "標準化偏差回帰係数1", b10_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b10_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b10_0 / (b10_0 + b10_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b10_1 / (b10_0 + b10_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren10 ])
-            dataWriter.writerow([ "", "相関係数2", ren10_1 ])
-            dataWriter.writerow([ "", "決定係数", score10 ])
-            dataWriter.writerow([ ])
-            dataWriter.writerow([ "ch2" ])
-            dataWriter.writerow([ "手首", "標準化偏差回帰係数1", b1_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b1_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b1_0 / (b1_0 + b1_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b1_1 / (b1_0 + b1_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren1 ])
-            dataWriter.writerow([ "", "相関係数2", ren1_1 ])
-            dataWriter.writerow([ "", "決定係数", score1 ])
-            dataWriter.writerow([ "指", "標準化偏差回帰係数1", b11_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b11_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b11_0 / (b11_0 + b11_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b11_1 / (b11_0 + b11_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren11 ])
-            dataWriter.writerow([ "", "相関係数2", ren11_1 ])
-            dataWriter.writerow([ "", "決定係数", score11 ])
-            dataWriter.writerow([ ])
-            dataWriter.writerow([ "ch3" ])
-            dataWriter.writerow([ "手首", "標準化偏差回帰係数1", b2_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b2_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b2_0 / (b2_0 + b2_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b2_1 / (b2_0 + b2_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren2 ])
-            dataWriter.writerow([ "", "相関係数2", ren2_1 ])
-            dataWriter.writerow([ "", "決定係数", score2 ])
-            dataWriter.writerow([ "指", "標準化偏差回帰係数1", b12_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b12_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b12_0 / (b12_0 + b12_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b12_1 / (b12_0 + b12_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren12 ])
-            dataWriter.writerow([ "", "相関係数2", ren12_1 ])
-            dataWriter.writerow([ "", "決定係数", score12 ])
-            dataWriter.writerow([ ])
-            dataWriter.writerow([ "ch4" ])
-            dataWriter.writerow([ "手首", "標準化偏差回帰係数1", b3_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b3_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b3_0 / (b3_0 + b3_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b3_1 / (b3_0 + b3_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren3 ])
-            dataWriter.writerow([ "", "相関係数2", ren3_1 ])
-            dataWriter.writerow([ "", "決定係数", score3 ])
-            dataWriter.writerow([ "指", "標準化偏差回帰係数1", b13_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b13_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b13_0 / (b13_0 + b13_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b13_1 / (b13_0 + b13_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren13 ])
-            dataWriter.writerow([ "", "相関係数2", ren13_1 ])
-            dataWriter.writerow([ "", "決定係数", score13 ])
-            dataWriter.writerow([ ])
-            dataWriter.writerow([ "ch5" ])
-            dataWriter.writerow([ "手首", "標準化偏差回帰係数1", b4_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b4_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b4_0 / (b4_0 + b4_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b4_1 / (b4_0 + b4_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren4 ])
-            dataWriter.writerow([ "", "相関係数2", ren4_1 ])
-            dataWriter.writerow([ "", "決定係数", score4 ])
-            dataWriter.writerow([ "指", "標準化偏差回帰係数1", b14_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b14_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b14_0 / (b14_0 + b14_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b14_1 / (b14_0 + b14_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren14 ])
-            dataWriter.writerow([ "", "相関係数2", ren14_1 ])
-            dataWriter.writerow([ "", "決定係数", score14 ])
-            dataWriter.writerow([ ])
-            dataWriter.writerow([ "ch6" ])
-            dataWriter.writerow([ "手首", "標準化偏差回帰係数1", b5_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b5_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b5_0 / (b5_0 + b5_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b5_1 / (b5_0 + b5_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren5 ])
-            dataWriter.writerow([ "", "相関係数2", ren5_1 ])
-            dataWriter.writerow([ "", "決定係数", score5 ])
-            dataWriter.writerow([ "指", "標準化偏差回帰係数1", b15_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b15_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b15_0 / (b15_0 + b15_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b15_1 / (b15_0 + b15_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren15 ])
-            dataWriter.writerow([ "", "相関係数2", ren15_1 ])
-            dataWriter.writerow([ "", "決定係数", score15 ])
-            dataWriter.writerow([ ])
-            dataWriter.writerow([ "ch7" ])
-            dataWriter.writerow([ "手首", "標準化偏差回帰係数1", b6_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b6_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b6_0 / (b6_0 + b6_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b6_1 / (b6_0 + b6_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren6 ])
-            dataWriter.writerow([ "", "相関係数2", ren6_1 ])
-            dataWriter.writerow([ "", "決定係数", score6 ])
-            dataWriter.writerow([ "指", "標準化偏差回帰係数1", b16_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b16_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b16_0 / (b16_0 + b16_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b16_1 / (b16_0 + b16_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren16 ])
-            dataWriter.writerow([ "", "相関係数2", ren16_1 ])
-            dataWriter.writerow([ "", "決定係数", score16 ])
-            dataWriter.writerow([ ])
-            dataWriter.writerow([ "ch8" ])
-            dataWriter.writerow([ "手首", "標準化偏差回帰係数1", b7_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b7_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b7_0 / (b7_0 + b7_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b7_1 / (b7_0 + b7_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren7 ])
-            dataWriter.writerow([ "", "相関係数2", ren7_1 ])
-            dataWriter.writerow([ "", "決定係数", score7 ])
-            dataWriter.writerow([ "指", "標準化偏差回帰係数1", b17_0 ])
-            dataWriter.writerow([ "", "標準化偏差回帰係数2", b17_1 ])
-            dataWriter.writerow([ "", "S0の寄与率", (b17_0 / (b17_0 + b17_1)) * 100 ])
-            dataWriter.writerow([ "", "S1の寄与率", (b17_1 / (b17_0 + b17_1)) * 100 ])
-            dataWriter.writerow([ "", "相関係数1", ren17 ])
-            dataWriter.writerow([ "", "相関係数2", ren17_1 ])
-            dataWriter.writerow([ "", "決定係数", score17 ])
+            dataWriter.writerow(["ch1"])
+            dataWriter.writerow(["手首", "標準化偏差回帰係数1", b0_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b0_1])
+            dataWriter.writerow(["", "S0の寄与率", (b0_0 / (b0_0 + b0_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b0_1 / (b0_0 + b0_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren0])
+            dataWriter.writerow(["", "相関係数2", ren0_1])
+            dataWriter.writerow(["", "決定係数", score0])
+            dataWriter.writerow(["指", "標準化偏差回帰係数1", b10_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b10_1])
+            dataWriter.writerow(["", "S0の寄与率", (b10_0 / (b10_0 + b10_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b10_1 / (b10_0 + b10_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren10])
+            dataWriter.writerow(["", "相関係数2", ren10_1])
+            dataWriter.writerow(["", "決定係数", score10])
+            dataWriter.writerow([])
+            dataWriter.writerow(["ch2"])
+            dataWriter.writerow(["手首", "標準化偏差回帰係数1", b1_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b1_1])
+            dataWriter.writerow(["", "S0の寄与率", (b1_0 / (b1_0 + b1_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b1_1 / (b1_0 + b1_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren1])
+            dataWriter.writerow(["", "相関係数2", ren1_1])
+            dataWriter.writerow(["", "決定係数", score1])
+            dataWriter.writerow(["指", "標準化偏差回帰係数1", b11_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b11_1])
+            dataWriter.writerow(["", "S0の寄与率", (b11_0 / (b11_0 + b11_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b11_1 / (b11_0 + b11_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren11])
+            dataWriter.writerow(["", "相関係数2", ren11_1])
+            dataWriter.writerow(["", "決定係数", score11])
+            dataWriter.writerow([])
+            dataWriter.writerow(["ch3"])
+            dataWriter.writerow(["手首", "標準化偏差回帰係数1", b2_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b2_1])
+            dataWriter.writerow(["", "S0の寄与率", (b2_0 / (b2_0 + b2_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b2_1 / (b2_0 + b2_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren2])
+            dataWriter.writerow(["", "相関係数2", ren2_1])
+            dataWriter.writerow(["", "決定係数", score2])
+            dataWriter.writerow(["指", "標準化偏差回帰係数1", b12_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b12_1])
+            dataWriter.writerow(["", "S0の寄与率", (b12_0 / (b12_0 + b12_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b12_1 / (b12_0 + b12_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren12])
+            dataWriter.writerow(["", "相関係数2", ren12_1])
+            dataWriter.writerow(["", "決定係数", score12])
+            dataWriter.writerow([])
+            dataWriter.writerow(["ch4"])
+            dataWriter.writerow(["手首", "標準化偏差回帰係数1", b3_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b3_1])
+            dataWriter.writerow(["", "S0の寄与率", (b3_0 / (b3_0 + b3_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b3_1 / (b3_0 + b3_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren3])
+            dataWriter.writerow(["", "相関係数2", ren3_1])
+            dataWriter.writerow(["", "決定係数", score3])
+            dataWriter.writerow(["指", "標準化偏差回帰係数1", b13_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b13_1])
+            dataWriter.writerow(["", "S0の寄与率", (b13_0 / (b13_0 + b13_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b13_1 / (b13_0 + b13_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren13])
+            dataWriter.writerow(["", "相関係数2", ren13_1])
+            dataWriter.writerow(["", "決定係数", score13])
+            dataWriter.writerow([])
+            dataWriter.writerow(["ch5"])
+            dataWriter.writerow(["手首", "標準化偏差回帰係数1", b4_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b4_1])
+            dataWriter.writerow(["", "S0の寄与率", (b4_0 / (b4_0 + b4_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b4_1 / (b4_0 + b4_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren4])
+            dataWriter.writerow(["", "相関係数2", ren4_1])
+            dataWriter.writerow(["", "決定係数", score4])
+            dataWriter.writerow(["指", "標準化偏差回帰係数1", b14_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b14_1])
+            dataWriter.writerow(["", "S0の寄与率", (b14_0 / (b14_0 + b14_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b14_1 / (b14_0 + b14_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren14])
+            dataWriter.writerow(["", "相関係数2", ren14_1])
+            dataWriter.writerow(["", "決定係数", score14])
+            dataWriter.writerow([])
+            dataWriter.writerow(["ch6"])
+            dataWriter.writerow(["手首", "標準化偏差回帰係数1", b5_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b5_1])
+            dataWriter.writerow(["", "S0の寄与率", (b5_0 / (b5_0 + b5_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b5_1 / (b5_0 + b5_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren5])
+            dataWriter.writerow(["", "相関係数2", ren5_1])
+            dataWriter.writerow(["", "決定係数", score5])
+            dataWriter.writerow(["指", "標準化偏差回帰係数1", b15_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b15_1])
+            dataWriter.writerow(["", "S0の寄与率", (b15_0 / (b15_0 + b15_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b15_1 / (b15_0 + b15_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren15])
+            dataWriter.writerow(["", "相関係数2", ren15_1])
+            dataWriter.writerow(["", "決定係数", score15])
+            dataWriter.writerow([])
+            dataWriter.writerow(["ch7"])
+            dataWriter.writerow(["手首", "標準化偏差回帰係数1", b6_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b6_1])
+            dataWriter.writerow(["", "S0の寄与率", (b6_0 / (b6_0 + b6_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b6_1 / (b6_0 + b6_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren6])
+            dataWriter.writerow(["", "相関係数2", ren6_1])
+            dataWriter.writerow(["", "決定係数", score6])
+            dataWriter.writerow(["指", "標準化偏差回帰係数1", b16_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b16_1])
+            dataWriter.writerow(["", "S0の寄与率", (b16_0 / (b16_0 + b16_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b16_1 / (b16_0 + b16_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren16])
+            dataWriter.writerow(["", "相関係数2", ren16_1])
+            dataWriter.writerow(["", "決定係数", score16])
+            dataWriter.writerow([])
+            dataWriter.writerow(["ch8"])
+            dataWriter.writerow(["手首", "標準化偏差回帰係数1", b7_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b7_1])
+            dataWriter.writerow(["", "S0の寄与率", (b7_0 / (b7_0 + b7_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b7_1 / (b7_0 + b7_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren7])
+            dataWriter.writerow(["", "相関係数2", ren7_1])
+            dataWriter.writerow(["", "決定係数", score7])
+            dataWriter.writerow(["指", "標準化偏差回帰係数1", b17_0])
+            dataWriter.writerow(["", "標準化偏差回帰係数2", b17_1])
+            dataWriter.writerow(["", "S0の寄与率", (b17_0 / (b17_0 + b17_1)) * 100])
+            dataWriter.writerow(["", "S1の寄与率", (b17_1 / (b17_0 + b17_1)) * 100])
+            dataWriter.writerow(["", "相関係数1", ren17])
+            dataWriter.writerow(["", "相関係数2", ren17_1])
+            dataWriter.writerow(["", "決定係数", score17])
             nf.close()
-            ren_list_avarage_0 = (ren_list0[ 0 ] + ren_list1[ 0 ] + ren_list2[ 0 ] + ren_list3[ 0 ] + ren_list4[ 0 ] +
-                                  ren_list5[ 0 ] + ren_list6[ 0 ] + ren_list7[ 0 ]) / 8
-            ren_list_avarage_1 = (ren_list0[ 1 ] + ren_list1[ 1 ] + ren_list2[ 1 ] + ren_list3[ 1 ] + ren_list4[ 1 ] +
-                                  ren_list5[ 1 ] + ren_list6[ 1 ] + ren_list7[ 1 ]) / 8
+            ren_list_avarage_0 = (ren_list0[0] + ren_list1[0] + ren_list2[0] + ren_list3[0] + ren_list4[0] +
+                                  ren_list5[0] + ren_list6[0] + ren_list7[0]) / 8
+            ren_list_avarage_1 = (ren_list0[1] + ren_list1[1] + ren_list2[1] + ren_list3[1] + ren_list4[1] +
+                                  ren_list5[1] + ren_list6[1] + ren_list7[1]) / 8
             ren_list_avarage_all = (ren_list_avarage_0 + ren_list_avarage_1) / 2
 
-            dataWriter_all.writerow(
-                [ "手首", ren_list0[ 0 ], ren_list1[ 0 ], ren_list2[ 0 ], ren_list3[ 0 ], ren_list4[ 0 ],
-                  ren_list5[ 0 ], ren_list6[ 0 ], ren_list7[ 0 ], ren_list_avarage_0, ren_list_avarage_all ])
-            dataWriter_all.writerow(
-                [ "指", ren_list0[ 1 ], ren_list1[ 1 ], ren_list2[ 1 ], ren_list3[ 1 ], ren_list4[ 1 ],
-                  ren_list5[ 1 ], ren_list6[ 1 ], ren_list7[ 1 ], ren_list_avarage_1 ])
+            dataWriter_all.writerow(["手首", ren_list0[0], ren_list1[0], ren_list2[0], ren_list3[0], ren_list4[0],
+                                     ren_list5[0], ren_list6[0], ren_list7[0], ren_list_avarage_0, ren_list_avarage_all])
+            dataWriter_all.writerow(["指", ren_list0[1], ren_list1[1], ren_list2[1], ren_list3[1], ren_list4[1],
+                                     ren_list5[1], ren_list6[1], ren_list7[1], ren_list_avarage_1])
 
             # 相関係数
             # if fft_flg == 1:
@@ -2050,21 +1787,23 @@ for i in path.new_subject:
             print(res_)
             # print(sum(res)/7)
 
-            s_tekubi_list = [ s_t0, s_t1, s_t2, s_t3, s_t4, s_t5, s_t6, s_t7 ]
-            s_yubi_list = [ s_y0, s_y1, s_y2, s_y3, s_y4, s_y5, s_y6, s_y7 ]
+            s_tekubi_list = [s_t0, s_t1, s_t2, s_t3, s_t4, s_t5, s_t6, s_t7]
+            s_yubi_list = [s_y0, s_y1, s_y2, s_y3, s_y4, s_y5, s_y6, s_y7]
             # s_tekubi_list = [s_t0, s_t1, s_t2, s_t3]
             # s_yubi_list = [s_y0, s_y1, s_y2, s_y3]
 
+
             if debug == 1 or debug == 3:
                 for m in range(0, 8):
-                    # plot_mixture_sources_predictions(X_ch_list_abs[i], [yubi_ch_list_abs[i], tekubi_ch_list_abs[i]],
-                    #                                  S_ch_list_abs[i], i + 1)
-                    plot_mixture_sources_predictions([ mix_ch_list_m[ m ], mix_2_ch_list_m[ m ] ],
-                                                     [ tekubi_ch_list_m[ m ], yubi_ch_list_m[ m ] ],
-                                                     [ s_tekubi_list[ m ], s_yubi_list[ m ] ], m + 1)
 
-                    # plot_mixture_sources_predictions(X_ch_list[i], [yubi_ch_list[i], tekubi_ch_list[i]], S_ch_list[i], i + 1)
-                    # plot_mixture_sources_predictions([mix_ch_list_m[i], mix_2_ch_list_m[i]], [tekubi_ch_list_m[i], yubi_ch_list_m[i]], [S_0_ch_list_m[i], S_1_ch_list_m[i]], i + 1)
+                        # plot_mixture_sources_predictions(X_ch_list_abs[i], [yubi_ch_list_abs[i], tekubi_ch_list_abs[i]],
+                        #                                  S_ch_list_abs[i], i + 1)
+                        plot_mixture_sources_predictions([ mix_ch_list_m[ m ], mix_2_ch_list_m[ m ] ],
+                                                         [ tekubi_ch_list_m[ m ], yubi_ch_list_m[ m ] ],
+                                                         [ s_tekubi_list[ m ], s_yubi_list[ m ] ], m + 1)
+
+                        # plot_mixture_sources_predictions(X_ch_list[i], [yubi_ch_list[i], tekubi_ch_list[i]], S_ch_list[i], i + 1)
+                        #plot_mixture_sources_predictions([mix_ch_list_m[i], mix_2_ch_list_m[i]], [tekubi_ch_list_m[i], yubi_ch_list_m[i]], [S_0_ch_list_m[i], S_1_ch_list_m[i]], i + 1)
 
             if debug == 2 or debug == 3:
                 write_plot(tekubi_ch_list_m, str("tekubi"))
@@ -2075,8 +1814,8 @@ for i in path.new_subject:
                 write_plot(s_yubi_list, str("s_yubi"))
 
             sub_average += ren_list_avarage_all
-    dataWriter_all.writerow([ "", "", "", "", "", "", "", "", "", "", sub_average / 12 ])
-    all_average += sub_average / 12
-dataWriter_all.writerow([ ])
-dataWriter_all.writerow([ "", "", "", "", "", "", "", "", "", "", all_average / 3 ])
+    dataWriter_all.writerow(["", "", "", "", "", "", "", "", "", "", sub_average/12])
+    all_average += sub_average/12
+dataWriter_all.writerow([])
+dataWriter_all.writerow(["", "", "", "", "", "", "", "", "", "", all_average/3])
 nf_all.close()

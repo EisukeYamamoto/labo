@@ -19,9 +19,17 @@ from sklearn.decomposition import FastICA
 import path
 from sklearn import linear_model
 from sklearn import preprocessing
-from sklearn.metrics import r2_score
+
+from numpy import abs, append, arange, arctan2, argsort, array, concatenate, \
+    cos, diag, dot, eye, float32, float64, loadtxt, matrix, multiply, ndarray, \
+    newaxis, savetxt, sign, sin, sqrt, zeros
+from numpy.linalg import eig, pinv
+
+import ica_SICA
 
 import csv
+
+SICA = ica_SICA.SICA()
 
 clf0 = linear_model.LinearRegression()
 clf1 = linear_model.LinearRegression()
@@ -124,6 +132,7 @@ def w_update(weights, x_white, bias1, lrate1):
         weights = weights + lrate1 * np.dot(block1 * np.eye(NCOMP) +
                                          np.dot(logit, unmixed.T), weights)
         bias1 = bias1 + lrate1 * logit.sum(axis=1).reshape(bias1.shape)
+        # print(start)
         # Checking if W blows up
         if (np.isnan(weights)).any() or np.max(np.abs(weights)) > MAX_W:
             print("Numeric error! restarting with lower learning rate")
@@ -152,7 +161,7 @@ def w_update(weights, x_white, bias1, lrate1):
 # infomax1: single modality infomax
 
 
-def infomax1(x_white, verbose=False):
+def infomax1(x_white, W, verbose=False):
     """Computes ICA infomax in whitened data
     Decomposes x_white as x_white=AS
     *Input
@@ -165,7 +174,7 @@ def infomax1(x_white, verbose=False):
     """
     NCOMP = x_white.shape[0]
     # Initialization
-    weights = np.eye(NCOMP)
+    weights = W
     old_weights = np.eye(NCOMP)
     d_weigths = np.zeros(NCOMP)
     old_d_weights = np.zeros(NCOMP)
@@ -222,7 +231,7 @@ def infomax1(x_white, verbose=False):
 # Single modality ICA
 
 
-def ica1(x_raw, ncomp, verbose=False):
+def ica1(x_raw, ncomp, W, verbose=False):
     '''
     Single modality Independent Component Analysis
     '''
@@ -234,7 +243,7 @@ def ica1(x_raw, ncomp, verbose=False):
         print("Done.")
     if verbose:
         print("Running INFOMAX-ICA ...")
-    mixer, sources, unmixer = infomax1(x_white, verbose)
+    mixer, sources, unmixer = infomax1(x_white, W, verbose)
     mixer = np.dot(dewhite, mixer)
 
     scale = sources.std(axis=1).reshape((-1, 1))
@@ -326,20 +335,244 @@ def calculate_new_w(w, X):
     w_new /= np.sqrt((w_new ** 2).sum())
     return w_new
 
+def jadeR(X, W):
+    """
+    JADEによる実信号のブラインド分離
+    jadeRは独立成分分析（ICA）アルゴリズムであるJADEを実装しています。
+    ジャン・フランコワ・カルドソが開発しました。
+    JADEについての詳細な情報は、以下のサイトを参照してください。
+    Cardoso, J. (1999) High-order contrasts for independent component analysis. Neural Computation, 11(1): 157-192.
+    または、ウェブサイトをご覧ください: http://www.tsi.enst.fr/~cardoso/guidesepsou.html
+
+    ICAに関するより詳しい情報は、Hyvarinen A., Karhunen J., Oja E. (2001). Independent Component Analysis, Wiley.
+    またはウェブサイト http://www.cis.hut.fi/aapo/papers/IJCNN99_tutorialweb/
+    オリジナルのMatlabバージョン1.8 (2005年5月)からNumPyへの翻訳
+    ガブリエル・ベッカーズ、http://gbeckers.nl .
+
+    Parameters:
+        X -- n x T のデータ行列（n個のセンサ，T個のサンプル）．NumPy 配列または行列でなければなりません．
+        m -- 抽出する独立成分の数．出力行列Bは、m個のソースのみが抽出されるように、サイズm×nを持つことになります。
+             これは，jadeR の操作を m 個の第一主成分に制限することで行われます．
+             デフォルトは None で、この場合は m == n です。
+        verbose -- 進捗情報を表示します。デフォルトは False です。
+
+    Returns:
+        Y＝B＊Xがｎ＊Tのデータ行列Xから抽出された分離されたソースであるようなｍ＊ｎの行列B（Numpy行列型）。
+        Bの行は、pinv(B)の列がノルムが小さい順になるように順序づけられます。
+        これは、`最もエネルギー的に有意な`成分がY = B * Xの行に最初に現れるという効果があります。
+
+    Quick notes (more at the end of this file):
+    o このコードは、REAL-valuedシグナルのためのコードです。 実数および複素数信号用のJADEのMATLAB実装も
+       http://sig.enst.fr/~cardoso/stuff.html から入手可能です。
+    o このアルゴリズムは、より効率的に処理するように最適化されているという点で、
+      最初にリリースされたJADEの実装とは異なります。
+        1) 実信号を用いて
+        2) ICAモデルが必ずしも保持されていない場合を想定しています。
+    o この実装で抽出できる独立したコンポーネントの数には実用的な制限があります。
+      JADEの最初のステップは、次元数をnからm（デフォルトはn）に削減したPCAであることに注意してください。
+      実際には、mは`非常に大きくはできません(40, 50, 60以上...利用可能なメモリに依存します)
+    o このファイルの最後にあるメモ、リファレンス、リビジョンの履歴など、WEB上の詳細を参照してください。
+        http://sig.enst.fr/~cardoso/stuff.html
+    o NumPy翻訳の詳細については、このファイルの最後を参照してください。
+    o このコードは良い仕事をしているはずなのに!  NumPYコードに関する問題があれば報告してください
+     gabriel@gbeckers.nl
+    著作権はオリジナルのMatlabコードにあります。Jean-Francois Cardoso <cardoso@sig.enst.fr>
+    著作権Numpy翻訳。ガブリエル・ベッカーズ <gabriel@gbeckers.nl
+    """
+
+    # GB: 私たちは入力引数のチェックを行い、
+    # 元の入力に干渉しないように新しい変数にデータをコピーします。
+    # また、倍精度 (float64) と X 用の numpy 行列型も必要です。
+
+    origtype = X.dtype  # float64
+
+    X_copy = X
+
+    X = matrix(X.astype(float64))  # 浮動小数点64の配列として作成されたXのコピーから行列を作成します。
+
+    [n, T] = X.shape
+
+    m = n
+
+    # X -= X.mean(1)
+
+    # 白色化と信号部分空間への投影
+    # -------------------------------------------
+
+    # 標本共分散行列の固有基底
+    [D, U] = eig((X * X.T) / float(T))
+    # バリアンスの増加で並べ替え
+    k = D.argsort()
+    Ds = D[k]
+
+    # 分散の減少によるmの最も有意なプリンシパルの比較
+    PCs = arange(n - 1, n - m - 1, -1)
+
+    # PCA
+    # この段階で、Bはm個の成分についてPCAを行います。
+    B = U[:, k[PCs]].T
+
+    # --- Scaling ---------------------------------
+    # 主成分のスケール
+    scales = sqrt(Ds[ PCs ])
+    B = diag(1. / scales) * B
+    # Sphering
+    X = B * X
+
+    # 簡単なところをやってみました。Bは白化行列で、Xは白です。
+
+    del U, D, Ds, k, PCs, scales
+
+    # NOTE: この段階では、X は、すべてのエントリが単位分散を持つようになったことを除いて、
+    # 実データの m 個の成分での PCA 分析です。Xをさらに回転させても、
+    # Xが無相関成分のベクトルであるという性質は維持されます。X のエントリが無相関であるだけでなく、
+    # 「可能な限り独立している」ような回転行列を見つけることが残っています。
+    # この独立性は、2よりも高い次数の相関によって測定されます。 我々はこのような独立性の尺度を定義しているが、
+    # これは 1) 相互情報の合理的な近似である 2) 高速アルゴリズムによって最適化できる
+    # この独立性の尺度は、キュムラント行列の集合の「双対性」にも対応する。以下のコードは、
+    # 積行列の特定の集合を最も対角化する行列として `missing rotation " を求めます。
+
+    # 累積行列の推定
+    # -------------------------------
+
+    # データの再整形、少しでも速くなることを願って...
+    X = X.T  # データを(256, 3)に転置します。
+    # 実数対称行列の空間の Dim.
+    dimsymm = int((m * (m + 1)) / 2)  # 6
+    # print(dimsymm)
+    # 累積行列数
+    nbcm = dimsymm  # 6
+    # 積算行列の格納
+    CM = matrix(zeros([m, m * nbcm], dtype=float64))
+    R = matrix(eye(m, dtype=float64))  # [[ 1.  0.  0.] [ 0.  1.  0.] [ 0.  0.  1.]]
+    # 積算行列の Temp.
+    Qij = matrix(zeros([m, m], dtype=float64))
+    # Temp
+    Xim = zeros(m, dtype=float64)
+    # Temp
+    Xijm = zeros(m, dtype=float64)
+
+    # シンメトリーの仕掛けを使ってストレージを節約しています。
+    # 私はここで何が起こっているのかを説明する短いメモを書く必要があります。
+    Range = arange(m)  # [0 1 2]
+
+    for im in range(m):
+        Xim = X[:, im]
+        Xijm = multiply(Xim, Xim)
+        Qij = multiply(Xijm, X).T * X / float(T) - R - 2 * dot(R[:, im], R[:, im].T)
+        CM[:, Range] = Qij
+        Range = Range + m
+        for jm in range(im):
+            Xijm = multiply(Xim, X[:, jm])
+            Qij = sqrt(2) * multiply(Xijm, X).T * X / float(T) - R[:, im] * R[:, jm].T - R[:, jm] * R[:, im].T
+            CM[:, Range] = Qij
+            Range = Range + m
+
+    # これで nbcm = m(m+1)/2 キュムラント行列が大きな行列に格納されました。
+    # m x m*nbcmの配列です。
+
+    # 積算行列の合同対角化
+    # ==============================================
+
+    V = matrix(eye(m, dtype=float64))  # [[ 1.  0.  0.] [ 0.  1.  0.] [ 0.  0.  1.]]
+
+    Diag = zeros(m, dtype=float64)  # [0. 0. 0.]
+    On = 0.0
+    Range = arange(m)  # [0 1 2]
+    for im in range(nbcm):  # nbcm == 6
+        Diag = diag(CM[:, Range])
+        On = On + (Diag * Diag).sum(axis=0)
+        Range = Range + m
+    Off = (multiply(CM, CM).sum(axis=0)).sum(axis=0) - On
+    # 小さな "角度の統計的にスケーリングされたしきい値
+    seuil = 1.0e-6 / sqrt(T)  # 6.25e-08
+    # sweep number
+    encore = True
+    sweep = 0
+    # 総回転数
+    updates = 0
+    # 所定の深度での回転数
+    upds = 0
+    g = zeros([2, nbcm], dtype=float64)  # [[ 0.  0.  0.  0.  0.  0.] [ 0.  0.  0.  0.  0.  0.]]
+    gg = zeros([2, 2], dtype=float64)  # [[ 0.  0.]  [ 0.  0.]]
+    G = zeros([2, 2], dtype=float64)
+    c = 0
+    s = 0
+    ton = 0
+    toff = 0
+    theta = 0
+    Gain = 0
+
+    # ジョイントの対角化適正化
+
+    while encore:
+        encore = False
+        sweep = sweep + 1
+        upds = 0
+        Vkeep = V
+
+        for p in range(m - 1):  # m == 3
+            for q in range(p + 1, m):  # p == 1 | range(p+1, m) == [2]
+
+                Ip = arange(p, m * nbcm, m)  # [ 0  3  6  9 12 15] [ 0  3  6  9 12 15] [ 1  4  7 10 13 16]
+                Iq = arange(q, m * nbcm, m)  # [ 1  4  7 10 13 16] [ 2  5  8 11 14 17] [ 2  5  8 11 14 17]
+
+                # computation of Givens angle
+                g = concatenate([CM[p, Ip] - CM[q, Iq], CM[p, Iq] + CM[q, Ip]])
+                gg = dot(g, g.T)
+                ton = gg[0, 0] - gg[1, 1]  # -6.54012319852 4.44880758012 -1.96674621935
+                toff = gg[0, 1] + gg[1, 0]  # -15.629032394 -4.3847687273 6.72969915184
+                theta = 0.5 * arctan2(toff, ton + sqrt(
+                    ton * ton + toff * toff))  # -0.491778606993 -0.194537202087 0.463781701868
+                Gain = (sqrt(ton * ton + toff * toff) - ton) / 4.0  # 5.87059352069 0.449409565866 2.24448683877
+
+                if abs(theta) > seuil:
+                    encore = True
+                    upds = upds + 1
+                    c = cos(theta)
+                    s = sin(theta)
+                    G = matrix([[c, -s], [s, c]])  # DON"T PRINT THIS! IT"LL BREAK THINGS! HELLA LONG
+                    pair = array([p, q])  # don't print this either
+                    V[:, pair] = V[:, pair] * G
+                    CM[pair, :] = G.T * CM[pair, :]
+                    CM[:, concatenate([Ip, Iq])] = append(c * CM[:, Ip] + s * CM[:, Iq],
+                                                              - s * CM[:, Ip] + c * CM[:, Iq], axis=1)
+                    On = On + Gain
+                    Off = Off - Gain
+        updates = updates + upds  # 3 6 9 9
+
+    # 分離行列
+    # -------------------
+
+    B = V.T * W  # [[ 0.17242566  0.10485568 -0.7373937 ] [-0.41923305 -0.84589716  1.41050008]  [ 1.12505903 -2.42824508  0.92226197]]
+
+    # 分離行列 B の行をパーミュレートして、最初に最もエネルギーの高い成分を取得します。ここでは**シグナル**は単位分散に正規化されています.
+    # したがって，ソートは，A = pinv(B) の列のノルムに従って行われます．
+
+    A = pinv(B)  # [[-3.35031851 -2.14563715  0.60277625] [-2.49989794 -1.25230985 -0.0835184 ] [-2.49501641 -0.67979249  0.12907178]]
+    keys = array(argsort(multiply(A, A).sum(axis=0)[ 0 ]))[ 0 ]  # [2 1 0]
+    B = B[keys, :]  # [[ 1.12505903 -2.42824508  0.92226197] [-0.41923305 -0.84589716  1.41050008] [ 0.17242566  0.10485568 -0.7373937 ]]
+    B = B[::-1, :]  # [[ 0.17242566  0.10485568 -0.7373937 ] [-0.41923305 -0.84589716  1.41050008] [ 1.12505903 -2.42824508  0.92226197]]
+    # just a trick to deal with sign == 0
+    b = B[:, 0]  # [[ 0.17242566] [-0.41923305] [ 1.12505903]]
+    signs = array(sign(sign(b) + 0.1).T)[ 0 ]  # [1. -1. 1.]
+    B = diag(signs) * B  # [[ 0.17242566  0.10485568 -0.7373937 ] [ 0.41923305  0.84589716 -1.41050008] [ 1.12505903 -2.42824508  0.92226197]]
+    S = np.dot(B, X_copy)
+    return B
 
 def ica(X, iterations, tolerance=1e-5):
     X = center(X)
     X = whitening(X)
     components_nr = X.shape[0]
-    # W = np.zeros((components_nr, components_nr), dtype=X.dtype)
-    W = ica1(X,2)
+    W = np.zeros((components_nr, components_nr), dtype=X.dtype)
+    # W = ica1(X,2)
     loop = [0]
     # print("components_nr")
     # print(components_nr)
 
     for i in range(components_nr):
-        # w = np.random.rand(components_nr)
-        w = W[i]
+        w = np.random.rand(components_nr)
+        # w = W[i]
         # print(w)
         # print("///////////////////////////////")
         for j in range(iterations):
@@ -361,6 +594,8 @@ def ica(X, iterations, tolerance=1e-5):
         # print("///////////////////////////////")
         W[i, :] = w
 
+    # W = ica1(X,2,W)
+    W = np.array(jadeR(X, W))
     S = np.dot(W, X)
     # print(W)
 
@@ -394,7 +629,7 @@ def plot_mixture_sources_predictions(X, original_sources, S, ch):
     if plot_flg == 1:
         if x_flg == 1:
             # plotpath1 = path.png_ica + "/" + d + "/" + i + "/複合+複合2/各チャンネルの比較/" + str(ch) + "ch" #
-            plotpath1 = path.png_ica_abs + "/" + i + "/" + d + "/" + s + "/" + l + "/" + c + "/infomax+fastICA/各チャンネルの比較/" + str(
+            plotpath1 = path.png_ica_abs + "/" + i + "/" + d + "/" + s + "/" + l + "/" + c + "/fastICA+JADE/各チャンネルの比較/" + str(
                 ch) + "ch"
         elif x_flg == 2:
             plotpath1 = path.png_ica + "/" + d + "/" + i + "/複合+手首/各チャンネルの比較/" + str(ch) + "ch"
@@ -429,7 +664,7 @@ def max_ch(l):
 
 
 def min_max(l, r, min_):
-    # print(min_)
+    print(min_)
     return [(i - min_) / r for i in l]
 
 def min_max2(l, r, min_):
@@ -724,19 +959,6 @@ def sim_pearson(d1, d2):
 
     return abs(covariance / (variance1 * variance2))
 
-    # n = len(d1)
-    #
-    # mean = sum(d1) / n
-    #
-    # mother = 0
-    # child = 0
-    # for k in range(n):
-    #     mother += abs(d1[k] - mean)**2
-    #     child += abs(d2[k] - d1[k])**2
-    #
-    # return 1 - (math.sqrt(child) / math.sqrt(mother))
-
-
 
 
 
@@ -832,7 +1054,7 @@ def write_plot(ch_list, name):
     if plot_flg == 1:
         if x_flg == 1:
             # plotpath2 = path.png_ica + "/" + d + "/" + i + "/複合+複合2/" + name
-            plotpath2 = path.png_ica_abs + "/" + i + "/" + d + "/" + s + "/" + l + "/" + c + "/infomax+fastICA/" + name
+            plotpath2 = path.png_ica_abs + "/" + i + "/" + d + "/" + s + "/" + l + "/" + c + "/fastICA+JADE/" + name
         elif x_flg == 2:
             plotpath2 = path.png_ica + "/" + d + "/" + i + "/複合+手首/" + name
         else:
@@ -847,7 +1069,7 @@ def write_plot(ch_list, name):
 
 
 
-nf_all = open(path.png_ica_abs + "/" + "結果まとめ_infomax+fastICA.CSV", 'w', encoding="utf_8_sig")
+nf_all = open(path.png_ica_abs + "/" + "結果まとめ_fastICA+JADE.CSV", 'w', encoding="utf_8_sig")
 dataWriter_all = csv.writer(nf_all)
 all_average = 0
 for i in path.new_subject:
@@ -975,14 +1197,25 @@ for i in path.new_subject:
                     X6 = mix_sources([mix_ch6, mix_2_ch6])
                     X7 = mix_sources([mix_ch7, mix_2_ch7])
 
-                    S0 = ica(X0, iterations=1000)
-                    S1 = ica(X1, iterations=1000)
-                    S2 = ica(X2, iterations=1000)
-                    S3 = ica(X3, iterations=1000)
-                    S4 = ica(X4, iterations=1000)
-                    S5 = ica(X5, iterations=1000)
-                    S6 = ica(X6, iterations=1000)
-                    S7 = ica(X7, iterations=1000)
+
+
+                    S0 = SICA.fit_transform(X0)
+                    S1 = SICA.fit_transform(X1)
+                    S2 = SICA.fit_transform(X2)
+                    S3 = SICA.fit_transform(X3)
+                    S4 = SICA.fit_transform(X4)
+                    S5 = SICA.fit_transform(X5)
+                    S6 = SICA.fit_transform(X6)
+                    S7 = SICA.fit_transform(X7)
+
+                    S0 = ica(S0, iterations=1000)
+                    S1 = ica(S1, iterations=1000)
+                    S2 = ica(S2, iterations=1000)
+                    S3 = ica(S3, iterations=1000)
+                    S4 = ica(S4, iterations=1000)
+                    S5 = ica(S5, iterations=1000)
+                    S6 = ica(S6, iterations=1000)
+                    S7 = ica(S7, iterations=1000)
 
                     tekubi_ch_list = [tekubi_ch0, tekubi_ch1, tekubi_ch2, tekubi_ch3, tekubi_ch4, tekubi_ch5, tekubi_ch6, tekubi_ch7]
                     mix_ch_list = [mix_ch0, mix_ch1, mix_ch2, mix_ch3, mix_ch4, mix_ch5, mix_ch6, mix_ch7]
@@ -1860,7 +2093,7 @@ for i in path.new_subject:
                     print()
                     print("////////////////////////////////////////////////////////")
                     print()
-                    nf = open(path.png_ica_abs + "/" + i + "/" + d + "/" + s + "/" + l + "/" + c + "/infomax+fastICA/結果_infomax+fastICA.CSV", 'w',
+                    nf = open(path.png_ica_abs + "/" + i + "/" + d + "/" + s + "/" + l + "/" + c + "/fastICA+JADE/結果_fastICA+JADE.CSV", 'w',
                               encoding="utf_8_sig")
                     dataWriter = csv.writer(nf)
                     dataWriter.writerow([ "ch1" ])

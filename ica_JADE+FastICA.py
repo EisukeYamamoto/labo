@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from app import ica
+# from app import ica
 import pandas as pd
 import numpy as np
 import math

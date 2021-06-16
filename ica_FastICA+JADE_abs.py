@@ -1,12 +1,11 @@
 import matplotlib.pyplot as plt
-from app import ica
 import pandas as pd
 import numpy as np
 import math
 from scipy import signal
 from sklearn.decomposition import PCA
 from sklearn.decomposition import FastICA
-from app import path
+import path
 from sklearn import linear_model
 from sklearn import preprocessing
 from numpy import abs, append, arange, arctan2, argsort, array, concatenate, \
@@ -77,15 +76,15 @@ def ica(X, iterations, tolerance=1e-5):
     components_nr = X.shape[0]
     W = np.zeros((components_nr, components_nr), dtype=X.dtype)
     # W = np.array(jadeR(X))
-    print(W.shape)
+    # print(W.shape)
     loop = [0]
-    print("components_nr")
-    print(components_nr)
+    # print("components_nr")
+    # print(components_nr)
 
     for i in range(components_nr):
         w = np.random.rand(components_nr)
         # w = W[i]
-        print(w)
+        # print(w)
         # w = W[i]
         # print(w)
         # print("///////////////////////////////")
@@ -100,7 +99,7 @@ def ica(X, iterations, tolerance=1e-5):
             # print(w)
 
             if distance < tolerance:
-                print("OK")
+                # print("OK")
                 # print(distance)
                 break
             # print(distance)
@@ -112,7 +111,7 @@ def ica(X, iterations, tolerance=1e-5):
     W = np.array(jadeR(X, W))
 
     S = np.dot(W, X)
-    print(W)
+    # print(W)
 
     return S
 
@@ -220,7 +219,7 @@ def jadeR(X, W):
     X = X.T  # データを(256, 3)に転置します。
     # 実数対称行列の空間の Dim.
     dimsymm = int((m * (m + 1)) / 2)  # 6
-    print(dimsymm)
+    # print(dimsymm)
     # 累積行列数
     nbcm = dimsymm  # 6
     # 積算行列の格納
@@ -257,6 +256,7 @@ def jadeR(X, W):
 
     V = matrix(eye(m, dtype=float64))  # [[ 1.  0.  0.] [ 0.  1.  0.] [ 0.  0.  1.]]
 
+    V = W
     Diag = zeros(m, dtype=float64)  # [0. 0. 0.]
     On = 0.0
     Range = arange(m)  # [0 1 2]
@@ -404,7 +404,7 @@ def max_ch(l):
 
 
 def min_max(l, r, min_):
-    print(min_)
+    # print(min_)
     return [(i - min_) / r for i in l]
 
 def min_max2(l, r, min_):
@@ -851,10 +851,10 @@ for i in path.new_subject:
                         mix_ch1 = mix1.iloc[:, 1].values
                         mix_ch2 = mix1.iloc[:, 2].values
                         mix_ch3 = mix1.iloc[:, 3].values
-                        mix_ch4 = mix1.iloc[:, 4].values
-                        mix_ch5 = mix1.iloc[:, 5].values
-                        mix_ch6 = mix1.iloc[:, 6].values
-                        mix_ch7 = mix1.iloc[:, 7].values
+                        # mix_ch4 = mix1.iloc[:, 4].values
+                        # mix_ch5 = mix1.iloc[:, 5].values
+                        # mix_ch6 = mix1.iloc[:, 6].values
+                        # mix_ch7 = mix1.iloc[:, 7].values
 
                         print("複合1：/" + i + "/" + d + "/" + s + "/" + c + "/" + j + "/" + l + ".CSV")
 
@@ -873,10 +873,10 @@ for i in path.new_subject:
                         mix_2_ch1 = mix2.iloc[:, 1].values
                         mix_2_ch2 = mix2.iloc[:, 2].values
                         mix_2_ch3 = mix2.iloc[:, 3].values
-                        mix_2_ch4 = mix2.iloc[:, 4].values
-                        mix_2_ch5 = mix2.iloc[:, 5].values
-                        mix_2_ch6 = mix2.iloc[:, 6].values
-                        mix_2_ch7 = mix2.iloc[:, 7].values
+                        # mix_2_ch4 = mix2.iloc[:, 4].values
+                        # mix_2_ch5 = mix2.iloc[:, 5].values
+                        # mix_2_ch6 = mix2.iloc[:, 6].values
+                        # mix_2_ch7 = mix2.iloc[:, 7].values
 
                         print("複合2：/" + i + "/" + d + "/" + s + "/" + c + "/" + j + "/" + l + ".CSV")
 
@@ -896,10 +896,10 @@ for i in path.new_subject:
                         tekubi_ch1 = tekubi.iloc[:, 1].values
                         tekubi_ch2 = tekubi.iloc[:, 2].values
                         tekubi_ch3 = tekubi.iloc[:, 3].values
-                        tekubi_ch4 = tekubi.iloc[:, 4].values
-                        tekubi_ch5 = tekubi.iloc[:, 5].values
-                        tekubi_ch6 = tekubi.iloc[:, 6].values
-                        tekubi_ch7 = tekubi.iloc[:, 7].values
+                        # tekubi_ch4 = tekubi.iloc[:, 4].values
+                        # tekubi_ch5 = tekubi.iloc[:, 5].values
+                        # tekubi_ch6 = tekubi.iloc[:, 6].values
+                        # tekubi_ch7 = tekubi.iloc[:, 7].values
 
                         print("手首：/" + i + "/" + d + "/" + s + "/" + c + "/" + j + "/" + l + ".CSV")
 
@@ -919,10 +919,10 @@ for i in path.new_subject:
                         yubi_ch1 = yubi.iloc[:, 1].values
                         yubi_ch2 = yubi.iloc[:, 2].values
                         yubi_ch3 = yubi.iloc[:, 3].values
-                        yubi_ch4 = yubi.iloc[:, 4].values
-                        yubi_ch5 = yubi.iloc[:, 5].values
-                        yubi_ch6 = yubi.iloc[:, 6].values
-                        yubi_ch7 = yubi.iloc[:, 7].values
+                        # yubi_ch4 = yubi.iloc[:, 4].values
+                        # yubi_ch5 = yubi.iloc[:, 5].values
+                        # yubi_ch6 = yubi.iloc[:, 6].values
+                        # yubi_ch7 = yubi.iloc[:, 7].values
 
                         print("指：/" + i + "/" + d + "/" + s + "/" + c + "/" + j + "/" + l + ".CSV")
 
@@ -931,19 +931,19 @@ for i in path.new_subject:
                     X1 = mix_sources([mix_ch1, mix_2_ch1])
                     X2 = mix_sources([mix_ch2, mix_2_ch2])
                     X3 = mix_sources([mix_ch3, mix_2_ch3])
-                    X4 = mix_sources([mix_ch4, mix_2_ch4])
-                    X5 = mix_sources([mix_ch5, mix_2_ch5])
-                    X6 = mix_sources([mix_ch6, mix_2_ch6])
-                    X7 = mix_sources([mix_ch7, mix_2_ch7])
+                    # X4 = mix_sources([mix_ch4, mix_2_ch4])
+                    # X5 = mix_sources([mix_ch5, mix_2_ch5])
+                    # X6 = mix_sources([mix_ch6, mix_2_ch6])
+                    # X7 = mix_sources([mix_ch7, mix_2_ch7])
 
                     S0 = ica(X0, iterations=1000)
                     S1 = ica(X1, iterations=1000)
                     S2 = ica(X2, iterations=1000)
                     S3 = ica(X3, iterations=1000)
-                    S4 = ica(X4, iterations=1000)
-                    S5 = ica(X5, iterations=1000)
-                    S6 = ica(X6, iterations=1000)
-                    S7 = ica(X7, iterations=1000)
+                    # S4 = ica(X4, iterations=1000)
+                    # S5 = ica(X5, iterations=1000)
+                    # S6 = ica(X6, iterations=1000)
+                    # S7 = ica(X7, iterations=1000)
 
                     tekubi_ch_list = [tekubi_ch0, tekubi_ch1, tekubi_ch2, tekubi_ch3, tekubi_ch4, tekubi_ch5, tekubi_ch6, tekubi_ch7]
                     mix_ch_list = [mix_ch0, mix_ch1, mix_ch2, mix_ch3, mix_ch4, mix_ch5, mix_ch6, mix_ch7]

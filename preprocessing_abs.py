@@ -1,6 +1,6 @@
 import pandas as pd
 from sklearn.decomposition import PCA
-from app import path
+import path
 from sklearn.preprocessing import StandardScaler
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,7 +10,7 @@ import csv
 
 hammingWindow = np.hamming(255)
 
-num = 10  # 移動平均　無しの場合は値を1に
+num = 30  # 移動平均　無しの場合は値を1に
 b = np.ones(num) / num
 
 N = int((path.data_long / 8) - 1)
@@ -56,10 +56,7 @@ for i in path.new_subject:
                         file_path = path.cut_8_new + "/" + i + "/" + d + "/" + s + "/" \
                                     + j + "/" + o + "/" + l + "cut.CSV"
                         print(
-                            "////////////////////////////////////////////////////////////////////////////////" +
-                            "//////////////////////")
-                        print(
-                            "file : " + path.cut_8_new + "/" + i + "/" + d + "/" + s + "/"
+                            "preprocessing ... file : " + path.cut_8_new + "/" + i + "/" + d + "/" + s + "/"
                             + j + "/" + o + "/" + l + "cut.CSV")
 
                         df = pd.read_csv(file_path)

@@ -10,16 +10,16 @@ from scipy.linalg import eigh
 from scipy.linalg import norm as mnorm
 
 import matplotlib.pyplot as plt
-from app import ica
 import pandas as pd
 import numpy as np
 import math
 from scipy import signal
 from sklearn.decomposition import PCA
 from sklearn.decomposition import FastICA
-from app import path
+import path
 from sklearn import linear_model
 from sklearn import preprocessing
+import ica_SICA
 
 import csv
 
